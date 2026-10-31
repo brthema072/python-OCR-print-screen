@@ -34,3 +34,10 @@ FATOR_MINIMO_DE_AMPLIACAO = 1.2
 # TENTATIVAS_CLIPBOARD vezes, esperando INTERVALO_TENTATIVA_SEGUNDOS.
 TENTATIVAS_CLIPBOARD = 5
 INTERVALO_TENTATIVA_SEGUNDOS = 0.1
+
+# Se True, salva o texto reconhecido em um arquivo .txt.
+SALVAR_RESULTADO = True
+
+# Pasta onde os arquivos serão salvos. O caminho é relativo à pasta de onde
+# você executa `python app.py`. A pasta é criada automaticamente
+PASTA_RESULTADOS = "resultados_historico"

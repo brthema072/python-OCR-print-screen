@@ -3,6 +3,8 @@
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
 
 from PIL import Image
 
@@ -12,6 +14,8 @@ from .configuracao import (
     COPIAR_RESULTADO,
     ESPERA_CAPTURA_SEGUNDOS,
     INTERVALO_VERIFICACAO_SEGUNDOS,
+    PASTA_RESULTADOS,
+    SALVAR_RESULTADO
 )
 from .ocr import MotorOcr
 
@@ -114,6 +118,8 @@ class MonitorCapturas:
         print(texto)
         print("--- fim ---\n")
 
+        self._salvar_resultado(texto)
+
         if not COPIAR_RESULTADO:
             return
 
@@ -124,6 +130,26 @@ class MonitorCapturas:
                 "[OCR] Não foi possível copiar o texto para a "
                 "área de transferência."
             )
+
+
+    def _salvar_resultado(self, texto: str) -> None:
+        """Salva o texto reconhecido em um arquivo .txt na pasta configurada"""
+        try:
+            pasta = Path(PASTA_RESULTADOS)
+
+            if not pasta.exists():
+                pasta.mkdir(parents=True, exist_ok=True)
+
+            nome = datetime.now().strftime("ocr_%Y-%m-%d_%H-%M.txt")
+
+            caminho = pasta / nome
+
+            caminho.write_text(texto, encoding="utf-8")
+        except OSError as erro:
+            print(f"[OCR] Não foi possível salvar o texto: {erro}")
+            return
+
+        print(f"[OCR] Texto salvo em {caminho}")
 
     def executar(self) -> None:
         """Registra os atalhos e fica observando a área de transferência."""
