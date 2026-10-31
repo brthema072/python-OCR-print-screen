@@ -105,7 +105,9 @@ class MonitorCapturas:
         try:
             texto = self._motor.reconhecer(imagem)
         except Exception as erro:
-            print(f"[OCR] Erro ao reconhecer a imagem: {erro}")
+            # O nome da exceção aparece mesmo quando a mensagem está vazia,
+            # como em um AssertionError. Sem isso, o erro fica invisível.
+            print(f"[OCR] Erro ao reconhecer a imagem: {type(erro).__name__}: {erro}")
             return
 
         duracao = time.perf_counter() - inicio

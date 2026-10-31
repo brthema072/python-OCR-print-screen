@@ -1,5 +1,7 @@
 keyboard
+numpy
 Pillow
+pytesseract
 pywin32
 winrt-runtime
 winrt-Windows.Foundation

@@ -6,8 +6,8 @@ Atalhos:
     Ctrl + Win + S  -> dispara o recorte nativo (atalho deste app)
 
 Depois que a imagem chega à área de transferência, o texto é reconhecido
-pelo OCR nativo do Windows, exibido no console e copiado para a área de
-transferência.
+pelo Tesseract (ou pelo OCR nativo do Windows, se o Tesseract não encontrar
+texto), exibido no console e copiado para a área de transferência.
 
 Este arquivo é só o ponto de entrada. A implementação está no pacote
 `ocr_captura/`; veja `GUIA_PYTHON.md` para um passeio pelo código.

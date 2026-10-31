@@ -5,10 +5,25 @@ Em Python, nomes em MAIÚSCULAS são uma convenção para constantes: valores qu
 não devem ser alterados enquanto o programa está rodando.
 """
 
-# Idiomas de OCR em ordem de preferência. O primeiro que estiver instalado no
-# Windows será usado. Para ver os disponíveis, rode o app e leia a mensagem
-# "[OCR] Idioma: ...".
+# Idiomas do OCR do Windows, em ordem de preferência. O primeiro que estiver
+# instalado será usado como alternativa ao Tesseract. O app mostra o idioma
+# escolhido na inicialização.
 IDIOMAS_OCR: tuple[str, ...] = ("pt-BR", "pt-PT", "en-US")
+
+# O Tesseract é o motor principal. Se ele não devolver nenhum texto, o app
+# usa o OCR nativo do Windows como alternativa. O Tesseract precisa do
+# executável Tesseract-OCR instalado (o pytesseract sozinho não basta).
+# Coloque False para usar apenas o OCR do Windows.
+USAR_TESSERACT = True
+
+# Idiomas do Tesseract, no formato que ele aceita. "por+eng" usa português e
+# inglês juntos. Os arquivos .traineddata de cada idioma precisam estar
+# instalados (veja `tesseract --list-langs`).
+IDIOMAS_TESSERACT = "por+eng"
+
+# Caminho do executável do Tesseract. Deixe vazio para o app procurar no PATH
+# e na pasta padrão de instalação (C:\Program Files\Tesseract-OCR).
+CAMINHO_TESSERACT = ""
 
 # Tempo máximo, em segundos, para o usuário concluir o recorte.
 ESPERA_CAPTURA_SEGUNDOS = 30.0
@@ -21,13 +36,22 @@ INTERVALO_VERIFICACAO_SEGUNDOS = 0.08
 # Atenção: isso substitui a imagem capturada.
 COPIAR_RESULTADO = True
 
-# O OCR do Windows acerta mais em imagens maiores. Capturas cujo maior lado
+# Os motores de OCR acertam mais em imagens maiores. Capturas cujo maior lado
 # seja menor que LADO_ALVO_OCR são ampliadas, respeitando ESCALA_MAXIMA.
 LADO_ALVO_OCR = 2500
 ESCALA_MAXIMA = 2.0
 
 # Só vale a pena ampliar se o ganho for de pelo menos 20%.
 FATOR_MINIMO_DE_AMPLIACAO = 1.2
+
+# Extração de texto claro sobreposto (títulos de vídeo, legendas, etc.).
+# O app procura pixels claros e com baixa saturação (branco/cinza), separa
+# as linhas e tenta o Tesseract em cada uma. A faixa de cobertura evita
+# aplicar a extração em capturas comuns (fundo branco ou escuro).
+TEXTO_CLARO_SATURACAO_MAXIMA = 0.14  # 0 = cinza; 1 = cor saturada
+TEXTO_CLARO_BRILHO_MINIMO = 0.50     # 0 = preto; 1 = branco
+TEXTO_CLARO_COBERTURA_MINIMA = 0.02  # 2% dos pixels da imagem
+TEXTO_CLARO_COBERTURA_MAXIMA = 0.40  # 40% dos pixels da imagem
 
 # A área de transferência pode ficar bloqueada por alguns milissegundos
 # enquanto outro programa escreve nela. As operações tentam de novo

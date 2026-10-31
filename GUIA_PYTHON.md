@@ -32,7 +32,7 @@ laço principal (a cada 80 ms)    compara a sequência do clipboard
 AreaTransferencia.ler_imagem()   pega a imagem do clipboard
        |
        v
-MotorOcr.reconhecer()            OCR nativo do Windows
+MotorOcr.reconhecer()            Tesseract (principal) + OCR do Windows
        |
        v
 console + clipboard              mostra o texto e copia o resultado
@@ -178,7 +178,7 @@ instância:
 ```python
 class MotorOcr:
     @staticmethod
-    def _escolher_engine() -> OcrEngine:
+    def _escolher_engine() -> OcrEngine | None:
         ...
 ```
 
@@ -278,7 +278,7 @@ Python usa exceções para erros. O padrão é:
 try:
     texto = self._motor.reconhecer(imagem)
 except Exception as erro:
-    print(f"[OCR] Erro ao reconhecer a imagem: {erro}")
+    print(f"[OCR] Erro ao reconhecer a imagem: {type(erro).__name__}: {erro}")
     return
 ```
 
@@ -290,7 +290,7 @@ Em `ocr.py` criamos uma exceção específica:
 
 ```python
 class OcrIndisponivelError(RuntimeError):
-    """Lançado quando o Windows não tem nenhum idioma de OCR instalado."""
+    """Lançado quando nem o Tesseract nem o OCR do Windows estão disponíveis."""
 ```
 
 Ela herda de `RuntimeError`. O `app.py` captura **somente** esse tipo:
@@ -442,7 +442,8 @@ ser protegida como uma unidade.
 
 ## 10. `async` e `await`: a ponte com o WinRT
 
-O OCR do Windows (`Windows.Media.Ocr`) é uma API assíncrona. O `winrt-Python`
+O OCR do Windows (`Windows.Media.Ocr`) é usado como alternativa quando o
+Tesseract não devolve texto. Ele é uma API assíncrona: o `winrt-Python`
 traduz essa API para funções `async def`, que você chama com `await`.
 
 ```python
@@ -456,13 +457,30 @@ async def _reconhecer_async(self, imagem: Image.Image) -> str:
   imediatamente; devolve um objeto que precisa ser aguardado.
 - `await` espera a operação terminar. Enquanto isso, o **event loop** pode
   executar outras tarefas assíncronas.
-- Como o resto do app é síncrono, `MotorOcr.reconhecer` cria um event loop
-  temporário com `asyncio.run(...)`:
+- O Tesseract roda de forma síncrona e é o motor principal. O `asyncio.run`
+  só entra em cena quando ele não encontra texto:
 
 ```python
 def reconhecer(self, imagem: Image.Image) -> str:
-    return asyncio.run(self._reconhecer_async(imagem))
+    preparada = preparar_para_ocr(imagem)
+
+    if self._tesseract is not None:
+        texto = self._reconhecer_com_tesseract(preparada)
+        texto_claro = self._reconhecer_texto_claro(imagem)
+        texto, _ = self._escolher_texto(texto, texto_claro)
+        if texto:
+            return texto
+
+    if self._engine is None:
+        return ""
+
+    return asyncio.run(self._reconhecer_async(preparada))
 ```
+
+A imagem preparada é reaproveitada pelos dois motores. Antes de desistir, o
+Tesseract ainda tenta a máscara de texto claro (`_reconhecer_texto_claro`); se
+ela contiver as mesmas palavras e acrescentar texto, `_escolher_texto` fica com
+a versão da máscara.
 
 `asyncio.run` cria o loop, executa a corrotina até o fim e fecha o loop. Ele
 **bloqueia a thread principal** até o OCR terminar; nesse app isso é aceitável
@@ -610,15 +628,36 @@ return imagem.resize(novo_tamanho, Image.Resampling.LANCZOS)
 - `Image.Resampling.LANCZOS` é o algoritmo de reamostragem. Ele costuma dar
   bordas mais nítidas para texto do que o padrão.
 
-O OCR do Windows não aceita transparência, então `converter_para_rgb` "achata"
-a imagem sobre branco antes de qualquer coisa.
+Os motores de OCR trabalham melhor com uma imagem RGB sem transparência, então
+`converter_para_rgb` "achata" a imagem sobre branco antes de qualquer coisa.
+
+### Texto claro sobreposto
+
+Títulos de vídeo e legendas costumam ser brancos ou cinzas sobre um fundo
+colorido. Para esses casos, `extrair_regioes_texto_claro` calcula duas
+grandezas por pixel:
+
+```python
+maior = rgb.max(axis=2)
+menor = rgb.min(axis=2)
+saturacao = (maior - menor) / maior
+```
+
+- `maior` é o brilho (o canal mais forte). Branco tem brilho alto.
+- `saturacao` perto de 0 indica cinza/branco; perto de 1 indica cor forte.
+- A máscara mantém pixels com brilho alto e saturação baixa.
+
+Depois, o código soma a máscara nas linhas e colunas para achar faixas de
+texto, recorta cada linha, amplia 4x e inverte as cores (texto preto em fundo
+branco), que é o formato preferido do Tesseract. A faixa
+`TEXTO_CLARO_COBERTURA_*` evita aplicar isso em capturas comuns, como uma tela
+inteira branca.
 
 ---
 
-## 13. As bibliotecas específicas do Windows
+## 13. As bibliotecas usadas pelo app
 
-Estas bibliotecas só funcionam no Windows e precisam estar instaladas no
-ambiente virtual:
+Estas bibliotecas precisam estar instaladas no ambiente virtual:
 
 - **`win32clipboard` / `win32con`** (pacote `pywin32`): acessam a área de
   transferência. `GetClipboardSequenceNumber()` devolve um número que muda a
@@ -627,12 +666,17 @@ ambiente virtual:
 - **`keyboard`**: registra atalhos globais com `add_hotkey`, verifica teclas
   com `is_pressed` e envia combinações com `send`. Ela instala um hook de
   teclado no Windows; por isso às vezes é preciso executar como administrador.
+- **`pytesseract`**: ponte Python para o executável do Tesseract, o motor de
+  OCR principal. Não inclui o executável nem os arquivos de idioma.
+- **`numpy`**: arrays numéricos usados para calcular a máscara de texto claro
+  (brilho e saturação) e localizar as linhas de texto.
 - **`winrt-*`**: bindings gerados para o Windows Runtime. É o que permite
   chamar `Windows.Media.Ocr` e `Windows.Graphics.Imaging` a partir do Python.
 - **`Pillow`**: manipulação de imagens e leitura do clipboard.
 
-Essas bibliotecas são extensões nativas (C/C++), não são Python puro. Por isso
-a instalação pode variar conforme a versão do Python e do Windows.
+A maioria dessas bibliotecas usa extensões nativas (C/C++), não são Python
+puro. Por isso a instalação pode variar conforme a versão do Python e do
+Windows.
 
 ---
 
