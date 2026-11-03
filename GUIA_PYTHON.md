@@ -17,16 +17,16 @@ captura** e depois leia os arquivos na ordem sugerida no final.
 
 ## 1. O caminho de uma captura
 
-O app tem quatro peças principais:
+O app tem cinco peças principais:
 
 ```text
 atalho de teclado
        |
        v
-MonitorCapturas.armar()          guarda "quero capturar" + prazo
+MonitorCapturas.armar()          verifica se o OCR está ligado
        |
        v
-laço principal (a cada 80 ms)    compara a sequência do clipboard
+laço do monitor (a cada 80 ms)   compara a sequência do clipboard
        |
        v
 AreaTransferencia.ler_imagem()   pega a imagem do clipboard
@@ -35,7 +35,15 @@ AreaTransferencia.ler_imagem()   pega a imagem do clipboard
 MotorOcr.reconhecer()            Tesseract (principal) + OCR do Windows
        |
        v
-console + clipboard              mostra o texto e copia o resultado
+console + resultado              copia e/ou salva conforme as preferências
+
+atalho Alt+P
+       |
+       v
+PainelLateral.alternar()         coloca um pedido na fila
+       |
+       v
+mainloop do Tkinter              edita GerenciadorPreferencias
 ```
 
 O `app.py` só monta as peças:
@@ -43,8 +51,12 @@ O `app.py` só monta as peças:
 ```python
 motor = MotorOcr()
 area = AreaTransferencia()
-monitor = MonitorCapturas(motor, area)
-monitor.executar()
+preferencias = GerenciadorPreferencias()
+painel = PainelLateral(preferencias)
+monitor = MonitorCapturas(motor, area, preferencias, painel.alternar)
+
+threading.Thread(target=monitor.executar, daemon=True).start()
+painel.executar()  # roda o mainloop do Tkinter na thread principal
 ```
 
 Cada classe tem uma responsabilidade. Isso é o que torna o código mais fácil
@@ -71,7 +83,7 @@ from PIL import Image
 from ocr_captura.ocr import MotorOcr
 
 # Import relativo: o ponto significa "módulo irmão dentro do mesmo pacote".
-from .configuracao import COPIAR_RESULTADO
+from .configuracao import OCR_ATIVO
 ```
 
 O import relativo (`from .configuracao import ...`) só funciona dentro de um
@@ -213,6 +225,20 @@ Com `frozen=True`, o objeto fica **imutável**: tentar fazer
 `captura.prazo = 10` gera um erro. Isso é útil com threads: um objeto criado
 nunca muda no meio da leitura por outra thread.
 
+O mesmo padrão aparece em `preferencias.py`:
+
+```python
+@dataclass(frozen=True)
+class Preferencias:
+    ocr_ativo: bool
+    copiar_texto: bool
+    salvar_resultado: bool
+```
+
+Quando o painel altera uma opção, `dataclasses.replace` cria outro objeto com
+o campo trocado. O monitor que estiver lendo a fotografia antiga termina com
+um estado consistente.
+
 ### `is` versus `==`
 
 Em `MonitorCapturas._concluir`:
@@ -256,7 +282,8 @@ No refactor:
 
 - o motor de OCR virou o atributo `self._engine` de `MotorOcr`;
 - o estado da captura virou `self._captura` de `MonitorCapturas`;
-- o lock virou `self._lock` de `MonitorCapturas`.
+- o lock virou `self._lock` de `MonitorCapturas`;
+- as opções alteráveis pelo painel viraram `GerenciadorPreferencias`.
 
 Vantagens:
 
@@ -266,7 +293,10 @@ Vantagens:
 4. O estado compartilhado e o lock ficam juntos, no mesmo lugar.
 
 Constantes como `ESPERA_CAPTURA_SEGUNDOS` continuam no módulo de configuração.
-Isso é normal: constantes não mudam durante a execução.
+Isso é normal: constantes não mudam durante a execução. Já `OCR_ATIVO`,
+`COPIAR_RESULTADO` e `SALVAR_RESULTADO` são apenas os **valores padrão**;
+depois que o painel altera uma opção, o estado vive em
+`GerenciadorPreferencias` e é salvo em JSON.
 
 ---
 
@@ -369,7 +399,9 @@ arquivo é fechado.
 
 Este app tem mais de uma thread:
 
-- a thread principal executa `MonitorCapturas.executar()` e o laço `while`;
+- a thread principal executa o `mainloop` do Tkinter, que mantém o painel
+  lateral;
+- uma thread `daemon` executa `MonitorCapturas.executar()` e o laço `while`;
 - a biblioteca `keyboard` executa os callbacks dos atalhos em uma thread
   interna dela;
 - `Ctrl+Win+S` cria uma thread extra para esperar o usuário soltar as teclas
@@ -381,11 +413,11 @@ Um **callback** é uma função passada para outra pessoa chamar depois. Em
 `captura.py`:
 
 ```python
-self._atalhos = Atalhos(self.armar)
+self._atalhos = Atalhos(self.armar, ao_abrir_painel)
 ```
 
-Estamos passando o método `armar` como valor. `Atalhos` guarda essa função e a
-chama quando um atalho é pressionado:
+Estamos passando os métodos `armar` e `alternar` como valores. `Atalhos`
+guarda essas funções e as chama quando um atalho é pressionado:
 
 ```python
 keyboard.add_hotkey("print screen", lambda: self._ao_armar("Print Screen"))
@@ -416,6 +448,19 @@ A espera acontece em outra thread porque o callback do teclado deve terminar
 rápido. Se ele dormisse 3 segundos, poderia atrasar o tratamento de outros
 atalhos.
 
+O monitor de capturas também roda em uma thread `daemon`, criada no `app.py`:
+
+```python
+threading.Thread(
+    target=monitor.executar,
+    daemon=True,
+    name="monitor-capturas",
+).start()
+```
+
+Assim o `mainloop` do Tkinter fica livre para desenhar o painel e responder
+aos cliques.
+
 ### Lock
 
 `threading.Lock` é um cadeado: só uma thread entra no bloco por vez.
@@ -429,7 +474,7 @@ with self._lock:
 ```
 
 Sem o lock, duas threads poderiam ler e alterar `_captura` ao mesmo tempo. Um
-exemplo de problema: o laço principal decide cancelar uma captura antiga
+exemplo de problema: o laço do monitor decide cancelar uma captura antiga
 enquanto um atalho acabou de armar uma nova; sem proteção, o cancelamento
 poderia apagar a captura nova.
 
@@ -437,6 +482,46 @@ O CPython tem o **GIL** (Global Interpreter Lock), que faz apenas uma thread
 executar bytecode por vez. Isso não dispensa o lock: o GIL não torna um
 conjunto de operações atômicas, e a lógica de "ler, verificar e limpar" precisa
 ser protegida como uma unidade.
+
+### Tkinter, fila e thread principal
+
+O Tkinter não é seguro para acesso concorrente. A regra do projeto é: **todos
+os widgets são criados e alterados na thread principal**. O callback do
+`Alt+P` roda na thread do `keyboard`, então ele não pode chamar
+`root.deiconify()` diretamente. Em `painel.py`, ele só coloca um pedido na
+fila:
+
+```python
+def alternar(self) -> None:
+    self._fila.put("alternar")
+```
+
+O laço do Tk consome a fila de tempos em tempos:
+
+```python
+def _processar_fila(self) -> None:
+    ...
+    evento = self._fila.get_nowait()
+    if evento == "alternar":
+        self._alternar_janela()
+    ...
+    self._root.after(INTERVALO_FILA_MS, self._processar_fila)
+```
+
+- `queue.Queue` é thread-safe: várias threads podem colocar e tirar itens
+  sem um lock manual.
+- `root.after(ms, funcao)` agenda uma função para rodar no futuro, na thread
+  do `mainloop`.
+- `root.mainloop()` mantém a janela viva e processa os eventos. O `app.py`
+  chama `painel.executar()` na thread principal.
+- O monitor de capturas fica em uma thread `daemon` para não bloquear o
+  `mainloop`.
+
+O interruptor do painel é um `tk.Canvas` pequeno. Em vez de usar o
+`Checkbutton` nativo, desenhamos o trilho e o botão com `create_oval` e
+`create_rectangle`; isso mantém as cores do tema iguais no Windows. O evento
+de clique só troca o valor e chama o callback que atualiza
+`GerenciadorPreferencias`.
 
 ---
 
@@ -483,8 +568,9 @@ ela contiver as mesmas palavras e acrescentar texto, `_escolher_texto` fica com
 a versão da máscara.
 
 `asyncio.run` cria o loop, executa a corrotina até o fim e fecha o loop. Ele
-**bloqueia a thread principal** até o OCR terminar; nesse app isso é aceitável
-porque o OCR é a tarefa atual. A vantagem é usar a API do Windows sem espalhar
+**bloqueia a thread do monitor** até o OCR terminar; nesse app isso é
+aceitável porque o OCR é a tarefa atual. A thread principal continua
+respondendo ao painel. A vantagem é usar a API do Windows sem espalhar
 `async`/`await` por todo o código.
 
 Um detalhe importante: `async` não significa "roda em outra thread
@@ -657,8 +743,14 @@ inteira branca.
 
 ## 13. As bibliotecas usadas pelo app
 
-Estas bibliotecas precisam estar instaladas no ambiente virtual:
+As bibliotecas externas precisam estar instaladas no ambiente virtual. As da
+biblioteca padrão já vêm com o Python:
 
+- **`tkinter`**: interface gráfica do painel lateral. É da biblioteca padrão e
+  acompanha o Python oficial do Windows. O `mainloop` roda na thread
+  principal.
+- **`json`**: lê e grava o arquivo de preferências em
+  `%APPDATA%\OCR Capturas\preferencias.json`.
 - **`win32clipboard` / `win32con`** (pacote `pywin32`): acessam a área de
   transferência. `GetClipboardSequenceNumber()` devolve um número que muda a
   cada alteração; é assim que o app detecta uma nova captura sem ficar
@@ -683,13 +775,15 @@ Windows.
 ## 14. Ordem sugerida de leitura
 
 1. **`ocr_captura/configuracao.py`** — só constantes e comentários.
-2. **`ocr_captura/imagens.py`** — funções puras, fáceis de testar.
-3. **`ocr_captura/area_transferencia.py`** — classes com métodos pequenos,
+2. **`ocr_captura/preferencias.py`** — dataclass imutável, lock e JSON.
+3. **`ocr_captura/imagens.py`** — funções puras, fáceis de testar.
+4. **`ocr_captura/area_transferencia.py`** — classes com métodos pequenos,
    retry e `try/finally`.
-4. **`ocr_captura/ocr.py`** — a parte assíncrona e a conversão para WinRT.
-5. **`ocr_captura/atalhos.py`** — callbacks, threads e `lambda`.
-6. **`ocr_captura/captura.py`** — o laço principal, o lock e o estado.
-7. **`app.py`** — a montagem final.
+5. **`ocr_captura/ocr.py`** — a parte assíncrona e a conversão para WinRT.
+6. **`ocr_captura/atalhos.py`** — callbacks, threads e `lambda`.
+7. **`ocr_captura/painel.py`** — Tkinter, fila, Canvas e animação.
+8. **`ocr_captura/captura.py`** — o laço principal, o lock e o estado.
+9. **`app.py`** — a montagem final e o ciclo de vida das threads.
 
 Ao ler, faça perguntas como:
 
@@ -788,6 +882,13 @@ ruff format .
 estilo. `ruff format` formata o código automaticamente. É opcional, mas ajuda
 a manter o projeto consistente.
 
+### 7. Mudar o visual do painel
+
+Em `ocr_captura/painel.py`, altere `LARGURA_PAINEL` ou as constantes `COR_*`.
+Rode o app, pressione `Alt+P` e veja o resultado. O layout usa `pack`, então
+os cartões se ajustam à largura automaticamente. Evite tocar em widgets fora
+da thread principal.
+
 ---
 
 ## 16. Glossário rápido
@@ -801,9 +902,13 @@ a manter o projeto consistente.
 | **Classe** | Molde para criar objetos; `MotorOcr`. |
 | **Instância** | Objeto criado a partir da classe; `motor = MotorOcr()`. |
 | **Atributo** | Dado guardado no objeto; `self._engine`. |
-| **Callback** | Função passada para ser chamada depois; `Atalhos(self.armar)`. |
+| **Callback** | Função passada para ser chamada depois; `Atalhos(self.armar, ...)`. |
 | **Thread** | Linha de execução independente dentro do processo. |
+| **Thread daemon** | Thread que não impede o processo de encerrar. |
 | **Lock** | Cadeado que impede duas threads de entrarem no mesmo bloco. |
+| **Fila (`Queue`)** | Estrutura thread-safe para passar pedidos entre threads. |
+| **Tkinter** | Biblioteca da interface; cria janelas e widgets. |
+| **`mainloop`** | Laço do Tkinter que processa eventos na thread principal. |
 | **Corrotina** | Função `async def` que pode pausar em `await`. |
 | **Event loop** | Laço que coordena corrotinas; criado por `asyncio.run`. |
 | **Type hint** | Anotação de tipo; `imagem: Image.Image`. |

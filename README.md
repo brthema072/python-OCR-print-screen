@@ -3,8 +3,13 @@
 Pressione **Print Screen** ou **Win + Shift + S** (ou **Ctrl + Win + S**) e o
 app reconhece o texto da imagem que estiver na área de transferência.
 
-O texto reconhecido é exibido no console e copiado para a área de
-transferência (substituindo a imagem capturada).
+O texto reconhecido é exibido no console e publicado conforme as opções do
+painel lateral: pode substituir a imagem no clipboard, ser salvo em `.txt` ou
+apenas aparecer no console.
+
+**Alt + P** abre um painel lateral para ligar/desligar o OCR na hora. Com o
+OCR desligado, nenhum reconhecimento é executado e a captura continua sendo
+apenas uma imagem na área de transferência, pronta para colar.
 
 ## Requisitos
 
@@ -12,6 +17,9 @@ transferência (substituindo a imagem capturada).
 - Python 3.10+ (testado com Python 3.13)
 - Tesseract-OCR instalado (motor principal)
 - Opcional: um idioma com OCR instalado no Windows (motor alternativo)
+
+A interface usa `tkinter`, que acompanha o Python oficial do Windows. Não há
+dependência nova.
 
 O app usa o **Tesseract** como motor principal. Se ele não devolver nenhum
 texto, o app tenta o **OCR nativo do Windows** (`Windows.Media.Ocr`) como
@@ -64,6 +72,7 @@ Atalhos:
 
 | Atalho | Comportamento |
 | --- | --- |
+| `Alt + P` | Abre ou fecha o painel lateral de configuração. |
 | `Print Screen` | Comportamento definido no Windows: abre a ferramenta de recorte (padrão do Windows 11) ou copia a tela inteira. |
 | `Win + Shift + S` | Abre a ferramenta de recorte nativa. |
 | `Ctrl + Win + S` | Dispara o atalho nativo `Win + Shift + S` (esse atalho não é nativo do Windows). |
@@ -76,6 +85,33 @@ no console.
 > e o `Print Screen` continuam abrindo o recorte do Windows normalmente, mas
 > sem o OCR.
 
+## Painel lateral (Alt + P)
+
+O painel abre pela direita, fica sobre as outras janelas e fecha com `Alt + P`
+ou `Esc`. Ele tem três opções:
+
+- **Reconhecer texto (OCR)**: desligado, nenhum OCR é executado. A captura
+  continua sendo uma imagem na área de transferência, pronta para colar em
+  outro programa.
+- **Copiar texto reconhecido**: ligado, o texto substitui a imagem no
+  clipboard. Desligado, a imagem continua disponível.
+- **Salvar histórico em .txt**: grava o texto reconhecido na pasta
+  `resultados_historico/`.
+
+As opções de resultado ficam desabilitadas quando o OCR está desligado. As
+alterações valem imediatamente e são salvas em:
+
+```text
+%APPDATA%\OCR Capturas\preferencias.json
+```
+
+O arquivo é criado na primeira alteração feita no painel. As constantes de
+`configuracao.py` são usadas como valores padrão; se o arquivo existir, ele
+tem prioridade. Para voltar aos padrões, feche o app e apague esse arquivo.
+
+O painel também tem o botão **Encerrar aplicativo**, que fecha o app de forma
+limpa (equivalente a `Ctrl+C` no terminal).
+
 ## Como o código está organizado
 
 O `app.py` é apenas o ponto de entrada. A implementação fica no pacote
@@ -84,7 +120,9 @@ O `app.py` é apenas o ponto de entrada. A implementação fica no pacote
 ```text
 app.py                          ponto de entrada; cria as peças e inicia o app
 ocr_captura/
-    configuracao.py             valores que você pode ajustar
+    configuracao.py             valores padrão que você pode ajustar
+    preferencias.py             opções do painel, salvas em JSON
+    painel.py                   painel lateral Tkinter (Alt+P)
     imagens.py                  conversão, ampliação e texto claro sobreposto
     area_transferencia.py       leitura/escrita do clipboard do Windows
     ocr.py                      Tesseract (principal) e OCR do Windows (fallback)
@@ -95,25 +133,39 @@ GUIA_PYTHON.md                  conceitos de Python usados no projeto
 
 O fluxo de uma captura:
 
-1. `Atalhos` registra **Print Screen**, **Win+Shift+S** e **Ctrl+Win+S**.
-2. Quando um atalho é pressionado, `MonitorCapturas.armar()` guarda a
-   sequência atual do clipboard e um prazo para a imagem chegar.
-3. O laço principal compara a sequência do clipboard a cada 80 ms.
-4. Quando a sequência muda e existe uma captura armada,
+1. `Atalhos` registra **Print Screen**, **Win+Shift+S**, **Ctrl+Win+S** e
+   **Alt+P**.
+2. Quando um atalho de captura é pressionado, `MonitorCapturas.armar()`
+   verifica se o OCR está ligado. Se estiver desligado, a imagem continua no
+   clipboard e o fluxo termina.
+3. Com o OCR ligado, `armar()` guarda a sequência atual do clipboard e um
+   prazo para a imagem chegar.
+4. O laço do monitor compara a sequência do clipboard a cada 80 ms.
+5. Quando a sequência muda e existe uma captura armada,
    `AreaTransferencia.ler_imagem()` lê a imagem.
-5. `MotorOcr.reconhecer()` chama o Tesseract na imagem preparada.
-6. Ele também tenta extrair texto claro sobreposto (títulos e legendas) e
+6. `MotorOcr.reconhecer()` chama o Tesseract na imagem preparada.
+7. Ele também tenta extrair texto claro sobreposto (títulos e legendas) e
    fica com o resultado mais completo.
-7. Se o Tesseract não devolver texto, `MotorOcr` tenta o OCR do Windows.
-8. O texto é exibido e, se `COPIAR_RESULTADO` estiver ligado, copiado para o
-   clipboard.
+8. Se o Tesseract não devolver texto, `MotorOcr` tenta o OCR do Windows.
+9. O texto é exibido e, conforme as preferências, copiado para o clipboard
+   e/ou salvo em `resultados_historico/`.
+
+O painel roda na thread principal (é ela que executa o `mainloop` do Tkinter);
+o monitor de capturas roda em uma thread `daemon`. O callback do `Alt+P` só
+coloca um pedido em uma fila, consumida pelo painel na thread principal.
 
 ## Configurações
 
 No arquivo `ocr_captura/configuracao.py`:
 
-- `COPIAR_RESULTADO`: se `True`, copia o texto reconhecido para a área de
-  transferência (e substitui a imagem). Coloque `False` para manter a imagem.
+- `OCR_ATIVO`: se `True` (padrão), o OCR começa ligado. O painel lateral pode
+  alternar em tempo de execução.
+- `COPIAR_RESULTADO`: valor padrão de "copiar texto". Se `True`, o texto
+  reconhecido substitui a imagem no clipboard. O painel lateral pode alterar
+  em tempo de execução.
+- `SALVAR_RESULTADO`: valor padrão de "salvar histórico". Se `True`, grava o
+  texto reconhecido em um `.txt`. O painel lateral pode alterar em tempo de
+  execução.
 - `ESPERA_CAPTURA_SEGUNDOS`: tempo máximo, em segundos, para concluir o recorte.
 - `IDIOMAS_OCR`: ordem de preferência dos idiomas de OCR do Windows.
 - `USAR_TESSERACT`: se `True` (padrão), usa o Tesseract como motor principal;
@@ -131,6 +183,11 @@ No arquivo `ocr_captura/configuracao.py`:
 - `TENTATIVAS_CLIPBOARD`, `INTERVALO_TENTATIVA_SEGUNDOS`: novas tentativas
   quando o Windows mantém o clipboard bloqueado por alguns milissegundos.
 
+As opções alteradas no painel são gravadas em
+`%APPDATA%\OCR Capturas\preferencias.json` e têm prioridade sobre as
+constantes acima. Para voltar aos padrões, apague esse arquivo com o app
+fechado.
+
 ## Entendendo o código
 
 Se você programa em outra linguagem e está aprendendo Python, comece pelo
@@ -140,7 +197,8 @@ Se você programa em outra linguagem e está aprendendo Python, comece pelo
 - funções, classes, `self` e type hints;
 - `@dataclass`, `@staticmethod` e imutabilidade;
 - `with`, `try/except/finally` e locks;
-- threads, callbacks e por que o estado da captura tem um `Lock`;
+- threads, callbacks, filas e por que o estado da captura tem um `Lock`;
+- Tkinter, `mainloop` e por que os widgets ficam na thread principal;
 - `async`/`await`, `asyncio.run` e a ponte com o WinRT;
 - list/dict comprehensions e generator expressions;
 - o caminho completo de uma captura, arquivo por arquivo.
@@ -150,6 +208,10 @@ Se você programa em outra linguagem e está aprendendo Python, comece pelo
 - **Os atalhos não funcionam**: execute o terminal como administrador,
   principalmente se o app em foco também estiver elevado. Alguns jogos que usam
   entrada direta (raw input) podem não ser capturados.
+- **Alt + P não abre o painel**: verifique se outro programa usa o mesmo
+  atalho global. Alguns aplicativos elevados também podem impedir o hook de
+  teclado de receber a combinação; nesse caso, execute o terminal como
+  administrador.
 - **Print Screen não copia nada**: no Windows 11, por padrão, ele abre a
   ferramenta de recorte. Se a opção estiver desativada, verifique se o Windows
   está configurado para copiar a tela para a área de transferência.

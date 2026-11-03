@@ -11,6 +11,7 @@ import keyboard
 # atalho nativo.
 PAUSA_INICIAL_SEGUNDOS = 0.5
 TEMPO_MAXIMO_ESPERA_SEGUNDOS = 3.0
+TEMPO_MAXIMO_LIBERACAO_ALT_P_SEGUNDOS = 3.0
 INTERVALO_VERIFICACAO_TECLAS_SEGUNDOS = 0.05
 PAUSA_ANTES_DE_ENVIAR_SEGUNDOS = 0.1
 
@@ -18,16 +19,23 @@ PAUSA_ANTES_DE_ENVIAR_SEGUNDOS = 0.1
 class Atalhos:
     """Registra os atalhos globais e avisa quando uma captura começa.
 
-    `ao_armar` é uma função recebida no construtor (um callback). Assim,
-    esta classe não precisa conhecer o `MonitorCapturas`: ela apenas avisa
-    "um atalho foi pressionado". Isso é injeção de dependência.
+    `ao_armar` e `ao_abrir_painel` são funções recebidas no construtor (os
+    callbacks). Assim, esta classe não precisa conhecer o `MonitorCapturas`
+    nem o painel: ela apenas avisa "um atalho foi pressionado". Isso é
+    injeção de dependência.
     """
 
-    def __init__(self, ao_armar: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        ao_armar: Callable[[str], None],
+        ao_abrir_painel: Callable[[], None],
+    ) -> None:
         self._ao_armar = ao_armar
+        self._ao_abrir_painel = ao_abrir_painel
+        self._painel_disparado = False
 
     def registrar(self) -> None:
-        """Registra os três atalhos no Windows."""
+        """Registra os três atalhos de captura e o atalho do painel no Windows."""
         keyboard.add_hotkey(
             "print screen",
             lambda: self._ao_armar("Print Screen"),
@@ -37,6 +45,38 @@ class Atalhos:
             lambda: self._ao_armar("Win+Shift+S"),
         )
         keyboard.add_hotkey("ctrl+windows+s", self._ctrl_win_s)
+
+        keyboard.add_hotkey("alt+p", self._alt_p)
+
+    def _alt_p(self) -> None:
+        """Abre o painel uma vez por pressão, sem repetir ao segurar a tecla."""
+        if self._painel_disparado:
+            return
+
+        self._painel_disparado = True
+        self._ao_abrir_painel()
+
+        # O callback do teclado deve terminar rápido. A espera pela soltura
+        # das teclas acontece em outra thread, como no Ctrl+Win+S.
+        threading.Thread(
+            target=self._liberar_alt_p,
+            daemon=True,
+        ).start()
+
+    def _liberar_alt_p(self) -> None:
+        """Libera o próximo Alt+P somente depois que as teclas forem soltas.
+
+        O limite evita que uma soltura perdida (por exemplo, ao trocar de
+        janela) deixe o atalho bloqueado para sempre.
+        """
+        limite = time.monotonic() + TEMPO_MAXIMO_LIBERACAO_ALT_P_SEGUNDOS
+        try:
+            while time.monotonic() < limite:
+                if not keyboard.is_pressed("alt") or not keyboard.is_pressed("p"):
+                    break
+                time.sleep(INTERVALO_VERIFICACAO_TECLAS_SEGUNDOS)
+        finally:
+            self._painel_disparado = False
 
     def _ctrl_win_s(self) -> None:
         self._ao_armar("Ctrl+Win+S")

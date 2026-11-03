@@ -18,8 +18,11 @@ Aplicativo Windows que reconhece texto de capturas de tela. Os atalhos
 colocam uma imagem na área de transferência; o app detecta a mudança, executa
 o OCR (Tesseract como motor principal e OCR nativo do Windows como
 alternativa) e publica o resultado no console, em arquivo e/ou no clipboard.
+Um painel lateral aberto com `Alt+P` permite ligar/desligar o OCR e ajustar
+o resultado em tempo de execução.
 
-Requisitos: Windows 10/11 e Python 3.10+.
+Requisitos: Windows 10/11 e Python 3.10+. A interface usa `tkinter`, da
+biblioteca padrão.
 
 ---
 
@@ -29,7 +32,9 @@ Requisitos: Windows 10/11 e Python 3.10+.
 app.py                          ponto de entrada; apenas monta as peças
 ocr_captura/
     __init__.py                 docstring com o mapa do pacote
-    configuracao.py             constantes ajustáveis
+    configuracao.py             constantes e valores padrão ajustáveis
+    preferencias.py             opções do painel, persistidas em JSON
+    painel.py                   painel lateral Tkinter (Alt+P)
     imagens.py                  funções puras de imagem
     area_transferencia.py       leitura/escrita do clipboard
     ocr.py                      Tesseract + OCR do Windows
@@ -42,18 +47,22 @@ README.md                       documentação para quem usa o app
 | Módulo                  | Responsabilidade                                                                | Não deve fazer                                                          |
 | ----------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `configuracao.py`       | Somente constantes e comentários.                                               | Importar módulos do projeto, executar lógica ou guardar estado mutável. |
+| `preferencias.py`       | Estado runtime imutável (`Preferencias`), lock e persistência em JSON.          | Conhecer Tkinter, OCR, clipboard ou atalhos.                            |
+| `painel.py`             | Painel lateral Tkinter, animação e controles de preferência.                    | Fazer OCR, acessar clipboard ou registrar atalhos.                      |
 | `imagens.py`            | Conversão para RGB, ampliação e extração de texto claro. Prefira funções puras. | Acessar clipboard, OCR, atalhos ou arquivos de resultado.               |
 | `area_transferencia.py` | Ler imagens e copiar texto no clipboard, com retry.                             | Chamar OCR, registrar atalhos ou decidir o que fazer com o texto.       |
 | `ocr.py`                | Fachada síncrona `MotorOcr.reconhecer(imagem)`, Tesseract e WinRT.              | Ler clipboard, registrar atalhos ou salvar resultados.                  |
-| `atalhos.py`            | Registrar atalhos e avisar via callback.                                        | Conhecer `MonitorCapturas`, OCR ou clipboard.                           |
-| `captura.py`            | Orquestrar o fluxo, proteger estado compartilhado e publicar o resultado.       | Implementar detalhes de OCR, imagem ou clipboard.                       |
+| `atalhos.py`            | Registrar atalhos de captura e do painel e avisar via callback.                 | Conhecer `MonitorCapturas`, painel, OCR ou clipboard.                   |
+| `captura.py`            | Orquestrar o fluxo, proteger estado compartilhado e publicar o resultado.       | Implementar detalhes de OCR, imagem, clipboard ou interface.            |
 | `app.py`                | Composition root: criar as dependências e iniciar o app.                        | Conter regra de negócio ou detalhes de implementação.                   |
 
 ### Direção das dependências
 
 ```text
 app.py
+  -> painel.py                 -> preferencias.py
   -> captura.py
+       -> preferencias.py
        -> ocr.py                  -> imagens.py, configuracao.py
        -> area_transferencia.py   -> imagens.py, configuracao.py
        -> atalhos.py              (independente das demais peças)
@@ -65,22 +74,31 @@ Regras:
 2. `captura.py` pode importar as peças internas; nenhum módulo interno importa
    `app.py`.
 3. Dependências são recebidas no construtor (`MotorOcr`, `AreaTransferencia`,
-   callback `ao_armar`), não criadas escondidas dentro das classes.
+   `GerenciadorPreferencias`, callbacks), não criadas escondidas dentro das
+   classes.
 4. Evite novos ciclos de import. Se uma feature parecer exigir um ciclo, o
    desenho das responsabilidades provavelmente está errado.
+5. `painel.py` não importa `captura.py`; o atalho do painel chega por callback
+   e a fila de eventos. `preferencias.py` é a única fonte compartilhada de
+   opções runtime.
 
 ### Fluxo de uma captura
 
 ```text
 Atalhos.registrar()
   -> callback -> MonitorCapturas.armar(origem)
+  -> se OCR desligado: a imagem continua no clipboard
   -> laço a cada INTERVALO_VERIFICACAO_SEGUNDOS
   -> compara a sequência do clipboard
   -> AreaTransferencia.ler_imagem()
   -> MonitorCapturas._processar()
   -> MotorOcr.reconhecer()
-  -> console -> salvar .txt (se SALVAR_RESULTADO)
-             -> copiar texto (se COPIAR_RESULTADO)
+  -> console -> salvar .txt (se preferencias.salvar_resultado)
+             -> copiar texto (se preferencias.copiar_texto)
+
+Atalhos (Alt+P)
+  -> callback -> PainelLateral.alternar() -> fila
+  -> thread principal (mainloop do Tk) -> GerenciadorPreferencias
 ```
 
 Contratos públicos que devem permanecer estáveis:
@@ -89,8 +107,11 @@ Contratos públicos que devem permanecer estáveis:
 - `AreaTransferencia.sequencia() -> int`
 - `AreaTransferencia.ler_imagem() -> Image.Image | None`
 - `AreaTransferencia.copiar_texto(texto) -> bool`
-- `Atalhos(ao_armar).registrar()`
-- `MonitorCapturas.executar()`
+- `Atalhos(ao_armar, ao_abrir_painel).registrar()`
+- `GerenciadorPreferencias.atuais() -> Preferencias`
+- `PainelLateral.alternar()`, `PainelLateral.executar()`,
+  `PainelLateral.encerrar()`
+- `MonitorCapturas.executar()`, `MonitorCapturas.parar()`
 
 Se uma feature não couber em nenhum contrato, justifique a mudança e atualize
 a documentação. Não sobrecarregue uma classe existente só para evitar criar um
@@ -103,6 +124,8 @@ módulo novo.
 | Mudança                                         | Lugar correto                       | Também atualizar                                             |
 | ----------------------------------------------- | ----------------------------------- | ------------------------------------------------------------ |
 | Nova constante ajustável                        | `ocr_captura/configuracao.py`       | `README.md`, seção Configurações                             |
+| Nova opção alterável em runtime                 | `ocr_captura/preferencias.py`       | `painel.py`, `captura.py`, `README.md`                       |
+| Controle, layout ou animação do painel          | `ocr_captura/painel.py`             | `README.md`, seção Painel lateral                            |
 | Algoritmo de conversão/ampliação/máscara        | `ocr_captura/imagens.py`            | Testes, quando existirem                                     |
 | Leitura/escrita do clipboard                    | `ocr_captura/area_transferencia.py` | `README.md`, se mudar o comportamento                        |
 | Novo motor, idioma ou fallback de OCR           | `ocr_captura/ocr.py`                | `README.md` e `requirements.txt`, se houver dependência nova |
@@ -141,32 +164,41 @@ import ...`).
 9. **Arquivos** usam `pathlib.Path` e `encoding="utf-8"`. Erros de escrita são
    tratados como `OSError`.
 10. **Threads**: callbacks de teclado devem terminar rápido. Esperas longas
-    vão para uma thread `daemon`. Use `time.monotonic()` para prazos.
+    vão para uma thread `daemon`. Use `time.monotonic()` para prazos. O
+    `mainloop` do Tkinter fica na thread principal; widgets nunca são tocados
+    pela thread do teclado ou do monitor. Use `queue.Queue` para pedidos
+    vindos de outras threads.
 11. **Async**: `async`/`await` fica restrito à integração com WinRT em
     `ocr.py`. A interface pública continua síncrona; `asyncio.run` é usado na
     borda.
-12. **Imutabilidade**: `CapturaArmada` é `frozen=True`; a remoção usa
-    identidade (`is`), não igualdade de valores.
+12. **Imutabilidade**: `CapturaArmada` e `Preferencias` são `frozen=True`; a
+    remoção usa identidade (`is`), não igualdade de valores.
 
 ### Atenção ao editar `MonitorCapturas._processar`
 
-O método tem um retorno antecipado quando `COPIAR_RESULTADO` é `False`. Qualquer
-novo efeito colateral (salvar arquivo, notificar, tocar som etc.) que deva ser
+O método lê uma fotografia de `Preferencias` no início e tem um retorno
+antecipado quando `preferencias.copiar_texto` é `False`. Qualquer novo efeito
+colateral (salvar arquivo, notificar, tocar som etc.) que deva ser
 independente da cópia precisa entrar **antes** de:
 
 ```python
-if not COPIAR_RESULTADO:
+if not preferencias.copiar_texto:
     return
 ```
 
-Mantenha salvar e copiar independentes. Um não deve desligar o outro.
+Mantenha salvar e copiar independentes. Um não deve desligar o outro. O
+retorno antecipado quando `ocr_ativo` é `False` deve continuar no começo do
+método, antes de qualquer OCR.
 
 ### Não faça
 
 - Mover lógica de OCR para `captura.py` ou para `app.py`.
 - Colocar código de clipboard em `ocr.py`.
-- Fazer `atalhos.py` importar `captura.py`.
+- Fazer `atalhos.py` importar `captura.py` ou `painel.py`.
+- Fazer `painel.py` importar `captura.py` ou tocar em widgets fora da thread
+  principal.
 - Trocar estado encapsulado por variáveis globais.
+- Guardar opções mutáveis em `configuracao.py`; use `preferencias.py`.
 - Espalhar números mágicos em vez de usar `configuracao.py`.
 - Engolir exceções inesperadas com `except Exception: pass`.
 - Alterar o formato das mensagens ou o fluxo sem atualizar README e testes.
@@ -190,12 +222,15 @@ Durante:
 - [ ] Erros esperados têm tratamento; os inesperados continuam visíveis.
 - [ ] Estado compartilhado está protegido por lock, se necessário.
 - [ ] A mudança não quebra o fluxo de salvar/copiar independentes.
+- [ ] Opções novas foram adicionadas a `Preferencias`, ao painel e à
+      persistência, se forem alteráveis pelo usuário.
 
 Antes de concluir:
 
 - [ ] `python -m compileall -q app.py ocr_captura` passa sem erros.
 - [ ] `python app.py` inicia e mostra os motores/atalhos corretamente.
 - [ ] Fiz um teste manual de captura quando a mudança afeta o fluxo.
+- [ ] Testei `Alt+P`, os três interruptores e a persistência, se aplicável.
 - [ ] README foi atualizado para comportamento/configuração nova.
 - [ ] `GUIA_PYTHON.md` foi atualizado se o padrão de código mudou.
 - [ ] `ocr_captura/__init__.py` e a árvore do README incluem módulos novos.
@@ -210,10 +245,15 @@ python app.py
 
 Teste manual mínimo, quando aplicável:
 
-1. Pressione `Print Screen` ou `Win + Shift + S`.
-2. Recorte um texto e confirme a mensagem `[OCR]` no console.
-3. Confirme o arquivo em `resultados_historico/`, se `SALVAR_RESULTADO`.
-4. Confirme o texto no clipboard, se `COPIAR_RESULTADO`.
+1. Pressione `Alt + P` e confirme que o painel abre e fecha.
+2. Com o OCR ligado, pressione `Print Screen` ou `Win + Shift + S`.
+3. Recorte um texto e confirme a mensagem `[OCR]` no console.
+4. Confirme o arquivo em `resultados_historico/`, se o histórico estiver
+   ligado.
+5. Confirme o texto no clipboard, se "copiar texto" estiver ligado.
+6. Desligue o OCR, recorte outro texto e confirme que a imagem continua no
+   clipboard.
+7. Feche e reabra o app e confirme que as escolhas do painel foram mantidas.
 
 Testes automatizados são bem-vindos, especialmente para funções puras de
 `imagens.py`. Quando existirem, coloque-os em `testes/` e rode com

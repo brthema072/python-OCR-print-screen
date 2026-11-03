@@ -2,6 +2,7 @@
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -11,13 +12,12 @@ from PIL import Image
 from .area_transferencia import AreaTransferencia
 from .atalhos import Atalhos
 from .configuracao import (
-    COPIAR_RESULTADO,
     ESPERA_CAPTURA_SEGUNDOS,
     INTERVALO_VERIFICACAO_SEGUNDOS,
     PASTA_RESULTADOS,
-    SALVAR_RESULTADO
 )
 from .ocr import MotorOcr
+from .preferencias import GerenciadorPreferencias
 
 
 @dataclass(frozen=True)
@@ -41,24 +41,40 @@ class MonitorCapturas:
     - observar a área de transferência;
     - chamar o OCR e publicar o resultado.
 
-    Os callbacks do teclado rodam em outra thread, enquanto o laço principal
-    roda na thread do `main`. Por isso, o estado compartilhado (`_captura`)
-    é protegido por um `threading.Lock`.
+    Os callbacks do teclado rodam em outra thread e o laço deste monitor roda
+    em uma thread daemon. Por isso, o estado compartilhado (`_captura`) é
+    protegido por um `threading.Lock`, e as preferências são lidas como uma
+    fotografia imutável.
     """
 
-    def __init__(self, motor: MotorOcr, area: AreaTransferencia) -> None:
+    def __init__(
+        self,
+        motor: MotorOcr,
+        area: AreaTransferencia,
+        preferencias: GerenciadorPreferencias,
+        ao_abrir_painel: Callable[[], None],
+    ) -> None:
         self._motor = motor
         self._area = area
-        self._atalhos = Atalhos(self.armar)
+        self._preferencias = preferencias
+        self._atalhos = Atalhos(self.armar, ao_abrir_painel)
         self._lock = threading.Lock()
         self._captura: CapturaArmada | None = None
+        self._parar = threading.Event()
 
     def armar(self, origem: str) -> None:
         """Marca o início de uma captura.
 
         Pode ser chamado pelos callbacks do teclado, em outra thread. O lock
-        garante que o laço principal não leia um estado pela metade.
+        garante que o laço do monitor não leia um estado pela metade.
         """
+        if not self._preferencias.atuais().ocr_ativo:
+            print(
+                f"[{origem}] OCR desligado. A imagem continuará disponível "
+                "na área de transferência."
+            )
+            return
+
         sequencia_base = self._area.sequencia()
 
         with self._lock:
@@ -98,7 +114,22 @@ class MonitorCapturas:
         )
 
     def _processar(self, imagem: Image.Image) -> None:
-        """Executa o OCR, mostra o texto e, se configurado, copia o resultado."""
+        """Executa o OCR e publica o resultado conforme as preferências.
+
+        A fotografia é tirada no começo do processamento. Assim, salvar e
+        copiar continuam independentes e usam o mesmo estado, mesmo que o
+        usuário altere o painel enquanto o OCR roda.
+        """
+        preferencias = self._preferencias.atuais()
+
+        if not preferencias.ocr_ativo:
+            # Caso o OCR tenha sido desligado depois de armar a captura.
+            print(
+                "[OCR] OCR desligado durante a captura. A imagem foi mantida "
+                "na área de transferência."
+            )
+            return
+
         print("[OCR] Imagem recebida. Reconhecendo texto...")
         inicio = time.perf_counter()
 
@@ -120,9 +151,10 @@ class MonitorCapturas:
         print(texto)
         print("--- fim ---\n")
 
-        self._salvar_resultado(texto)
+        if preferencias.salvar_resultado:
+            self._salvar_resultado(texto)
 
-        if not COPIAR_RESULTADO:
+        if not preferencias.copiar_texto:
             return
 
         if self._area.copiar_texto(texto):
@@ -132,7 +164,6 @@ class MonitorCapturas:
                 "[OCR] Não foi possível copiar o texto para a "
                 "área de transferência."
             )
-
 
     def _salvar_resultado(self, texto: str) -> None:
         """Salva o texto reconhecido em um arquivo .txt na pasta configurada"""
@@ -153,19 +184,35 @@ class MonitorCapturas:
 
         print(f"[OCR] Texto salvo em {caminho}")
 
+    def parar(self) -> None:
+        """Pede ao laço que termine na próxima verificação."""
+        self._parar.set()
+
     def executar(self) -> None:
         """Registra os atalhos e fica observando a área de transferência."""
         self._atalhos.registrar()
 
+        preferencias = self._preferencias.atuais()
+        estado = "ligado" if preferencias.ocr_ativo else "desligado"
         print("[OCR] Atalhos ativos: Print Screen | Win+Shift+S | Ctrl+Win+S")
-        print("[OCR] Pronto. Pressione Print Screen ou Win+Shift+S.")
-        print("[OCR] Pressione Ctrl+C para encerrar.")
+        print("[OCR] Painel de configuração: Alt+P")
+        print(f"[OCR] OCR {estado}.")
+
+        if preferencias.ocr_ativo:
+            print("[OCR] Pronto. Pressione Print Screen ou Win+Shift+S.")
+        else:
+            print(
+                "[OCR] Pronto. As capturas serão mantidas como imagem na "
+                "área de transferência."
+            )
+
+        print("[OCR] Pressione Ctrl+C ou use o painel (Alt+P) para encerrar.")
 
         ultima_sequencia = self._area.sequencia()
 
-        while True:
-            time.sleep(INTERVALO_VERIFICACAO_SEGUNDOS)
-
+        # Event.wait devolve True quando `parar()` é chamado e encerra o laço
+        # sem esperar o intervalo inteiro.
+        while not self._parar.wait(INTERVALO_VERIFICACAO_SEGUNDOS):
             self._cancelar_se_expirou()
 
             sequencia = self._area.sequencia()

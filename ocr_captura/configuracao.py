@@ -32,8 +32,13 @@ ESPERA_CAPTURA_SEGUNDOS = 30.0
 # 0.08 s = 80 ms. Valores menores que isso gastam CPU sem melhorar a resposta.
 INTERVALO_VERIFICACAO_SEGUNDOS = 0.08
 
+# O OCR começa ligado. O painel lateral (Alt+P) pode alternar em tempo de
+# execução; a escolha fica salva entre execuções.
+OCR_ATIVO = True
+
 # Se True, copia o texto reconhecido para a área de transferência.
-# Atenção: isso substitui a imagem capturada.
+# Atenção: isso substitui a imagem capturada. O painel lateral também pode
+# alterar esta opção em tempo de execução.
 COPIAR_RESULTADO = True
 
 # Os motores de OCR acertam mais em imagens maiores. Capturas cujo maior lado
@@ -59,9 +64,16 @@ TEXTO_CLARO_COBERTURA_MAXIMA = 0.40  # 40% dos pixels da imagem
 TENTATIVAS_CLIPBOARD = 5
 INTERVALO_TENTATIVA_SEGUNDOS = 0.1
 
-# Se True, salva o texto reconhecido em um arquivo .txt.
+# Se True, salva o texto reconhecido em um arquivo .txt. O painel lateral
+# também pode alterar esta opção em tempo de execução.
 SALVAR_RESULTADO = True
 
 # Pasta onde os arquivos serão salvos. O caminho é relativo à pasta de onde
 # você executa `python app.py`. A pasta é criada automaticamente
 PASTA_RESULTADOS = "resultados_historico"
+
+# Pasta e arquivo onde o painel lateral salva as preferências alteradas na
+# interface. A pasta fica dentro de %APPDATA%. Se APPDATA não existir, o app
+# usa a pasta do usuário.
+PASTA_PREFERENCIAS = "OCR Capturas"
+ARQUIVO_PREFERENCIAS = "preferencias.json"
