@@ -1,0 +1,27 @@
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(__VERSAO_TUPLA__),
+    prodvers=(__VERSAO_TUPLA__),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable(
+        '041604B0',
+        [StringStruct('CompanyName', 'OCR de Capturas'),
+         StringStruct('FileDescription', 'OCR de capturas de tela'),
+         StringStruct('FileVersion', '__VERSAO__'),
+         StringStruct('InternalName', 'OCR-Capturas'),
+         StringStruct('OriginalFilename', 'OCR-Capturas.exe'),
+         StringStruct('ProductName', 'OCR de Capturas'),
+         StringStruct('ProductVersion', '__VERSAO__')]
+      )
+    ]),
+    VarFileInfo([VarStruct('Translation', [0x0416, 1200])])
+  ]
+)

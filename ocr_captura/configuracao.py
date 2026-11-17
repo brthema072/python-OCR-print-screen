@@ -11,18 +11,20 @@ não devem ser alterados enquanto o programa está rodando.
 IDIOMAS_OCR: tuple[str, ...] = ("pt-BR", "pt-PT", "en-US")
 
 # O Tesseract é o motor principal. Se ele não devolver nenhum texto, o app
-# usa o OCR nativo do Windows como alternativa. O Tesseract precisa do
-# executável Tesseract-OCR instalado (o pytesseract sozinho não basta).
+# usa o OCR nativo do Windows como alternativa. No código-fonte, o Tesseract
+# precisa estar instalado; no executável, ele já vai incluído no pacote.
 # Coloque False para usar apenas o OCR do Windows.
 USAR_TESSERACT = True
 
 # Idiomas do Tesseract, no formato que ele aceita. "por+eng" usa português e
-# inglês juntos. Os arquivos .traineddata de cada idioma precisam estar
-# instalados (veja `tesseract --list-langs`).
+# inglês juntos. No código-fonte, os arquivos .traineddata precisam estar
+# instalados (veja `tesseract --list-langs`). No build, o script copia estes
+# idiomas para o pacote.
 IDIOMAS_TESSERACT = "por+eng"
 
 # Caminho do executável do Tesseract. Deixe vazio para o app procurar no PATH
-# e na pasta padrão de instalação (C:\Program Files\Tesseract-OCR).
+# e na pasta padrão de instalação (C:\Program Files\Tesseract-OCR). No
+# executável, a cópia embutida tem prioridade.
 CAMINHO_TESSERACT = ""
 
 # Tempo máximo, em segundos, para o usuário concluir o recorte.
@@ -68,8 +70,9 @@ INTERVALO_TENTATIVA_SEGUNDOS = 0.1
 # também pode alterar esta opção em tempo de execução.
 SALVAR_RESULTADO = True
 
-# Pasta onde os arquivos serão salvos. O caminho é relativo à pasta de onde
-# você executa `python app.py`. A pasta é criada automaticamente
+# Pasta onde os arquivos serão salvos. No código-fonte, o caminho é relativo à
+# pasta de onde você executa `python app.py`; no executável, fica em
+# %APPDATA%\OCR Capturas\resultados_historico. A pasta é criada automaticamente.
 PASTA_RESULTADOS = "resultados_historico"
 
 # Pasta e arquivo onde o painel lateral salva as preferências alteradas na

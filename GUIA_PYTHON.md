@@ -17,7 +17,7 @@ captura** e depois leia os arquivos na ordem sugerida no final.
 
 ## 1. O caminho de uma captura
 
-O app tem cinco peças principais:
+O fluxo principal tem estas peças:
 
 ```text
 atalho de teclado
@@ -35,7 +35,7 @@ AreaTransferencia.ler_imagem()   pega a imagem do clipboard
 MotorOcr.reconhecer()            Tesseract (principal) + OCR do Windows
        |
        v
-console + resultado              copia e/ou salva conforme as preferências
+console/log + resultado          copia e/ou salva conforme as preferências
 
 atalho Alt+P
        |
@@ -117,6 +117,10 @@ permite importar funções do `app.py` em testes sem iniciar o app inteiro.
 `main()` devolve um número inteiro: `0` para sucesso, `1` para erro. O
 `raise SystemExit(...)` encerra o processo com esse código. É o equivalente
 ao `exit code` de outras linguagens.
+
+Antes de montar as peças, `main()` configura a saída para o log (quando o
+executável não tem console) e adquire a instância única. A montagem em si fica
+em `_executar()`; os detalhes do modo congelado estão na seção 17.
 
 ---
 
@@ -751,6 +755,9 @@ biblioteca padrão já vêm com o Python:
   principal.
 - **`json`**: lê e grava o arquivo de preferências em
   `%APPDATA%\OCR Capturas\preferencias.json`.
+- **`ctypes`**: chama funções do Windows que não têm equivalente em Python,
+  como `CreateMutexW` (instância única) e `MessageBoxW` (aviso da segunda
+  cópia).
 - **`win32clipboard` / `win32con`** (pacote `pywin32`): acessam a área de
   transferência. `GetClipboardSequenceNumber()` devolve um número que muda a
   cada alteração; é assim que o app detecta uma nova captura sem ficar
@@ -759,7 +766,9 @@ biblioteca padrão já vêm com o Python:
   com `is_pressed` e envia combinações com `send`. Ela instala um hook de
   teclado no Windows; por isso às vezes é preciso executar como administrador.
 - **`pytesseract`**: ponte Python para o executável do Tesseract, o motor de
-  OCR principal. Não inclui o executável nem os arquivos de idioma.
+  OCR principal. Não inclui o executável nem os arquivos de idioma; no
+  executável do projeto, o Tesseract é copiado à parte para
+  `_internal/tesseract`.
 - **`numpy`**: arrays numéricos usados para calcular a máscara de texto claro
   (brilho e saturação) e localizar as linhas de texto.
 - **`winrt-*`**: bindings gerados para o Windows Runtime. É o que permite
@@ -770,20 +779,29 @@ A maioria dessas bibliotecas usa extensões nativas (C/C++), não são Python
 puro. Por isso a instalação pode variar conforme a versão do Python e do
 Windows.
 
+Ferramentas de build, que não entram no aplicativo:
+
+- **PyInstaller**: transforma o pacote Python e suas dependências em
+  `OCR-Capturas.exe` e na pasta `_internal`.
+- **Inno Setup**: embrulha a pasta gerada em um instalador `.exe` por usuário.
+- **Pillow** (de novo): também gera o ícone em `empacotamento/gerar_icone.py`.
+
 ---
 
 ## 14. Ordem sugerida de leitura
 
 1. **`ocr_captura/configuracao.py`** — só constantes e comentários.
-2. **`ocr_captura/preferencias.py`** — dataclass imutável, lock e JSON.
-3. **`ocr_captura/imagens.py`** — funções puras, fáceis de testar.
-4. **`ocr_captura/area_transferencia.py`** — classes com métodos pequenos,
+2. **`ocr_captura/caminhos.py`** — `sys.frozen`, `_MEIPASS` e pastas do usuário.
+3. **`ocr_captura/preferencias.py`** — dataclass imutável, lock e JSON.
+4. **`ocr_captura/imagens.py`** — funções puras, fáceis de testar.
+5. **`ocr_captura/area_transferencia.py`** — classes com métodos pequenos,
    retry e `try/finally`.
-5. **`ocr_captura/ocr.py`** — a parte assíncrona e a conversão para WinRT.
-6. **`ocr_captura/atalhos.py`** — callbacks, threads e `lambda`.
-7. **`ocr_captura/painel.py`** — Tkinter, fila, Canvas e animação.
-8. **`ocr_captura/captura.py`** — o laço principal, o lock e o estado.
-9. **`app.py`** — a montagem final e o ciclo de vida das threads.
+6. **`ocr_captura/ocr.py`** — a parte assíncrona e a conversão para WinRT.
+7. **`ocr_captura/atalhos.py`** — callbacks, threads e `lambda`.
+8. **`ocr_captura/painel.py`** — Tkinter, fila, Canvas e animação.
+9. **`ocr_captura/captura.py`** — o laço principal, o lock e o estado.
+10. **`ocr_captura/instancia.py`** — `ctypes` e o mutex de instância única.
+11. **`app.py`** — a montagem final, o log e o ciclo de vida das threads.
 
 Ao ler, faça perguntas como:
 
@@ -916,6 +934,11 @@ da thread principal.
 | **Context manager** | Objeto usado com `with`; libera recursos no final. |
 | **Generator** | Sequência preguiçosa; produz um item por vez. |
 | **GIL** | Lock global do CPython; não substitui um `Lock` de lógica. |
+| **Mutex** | Objeto nomeado do Windows usado para garantir instância única. |
+| **Modo congelado** | Código rodando dentro do executável (`sys.frozen`), sem o Python do sistema. |
+| **`_MEIPASS`** | Pasta onde o PyInstaller coloca os recursos do executável. |
+| **PyInstaller** | Ferramenta que cria o `.exe` e a pasta `_internal`. |
+| **Inno Setup** | Ferramenta que gera o instalador `.exe` do Windows. |
 | **Clipboard** | Área de transferência do Windows. |
 | **OCR** | Reconhecimento óptico de caracteres. |
 | **WinRT** | Windows Runtime, API nativa usada pelo OCR. |
@@ -924,3 +947,162 @@ Se algum trecho ainda parecer mágico, uma boa técnica é isolar a função em 
 arquivo de teste e imprimir os valores intermediários. Python favorece esse
 tipo de experimentação: `print`, `type(valor)` e `help(função)` são ferramentas
 de aprendizado.
+
+---
+
+## 17. Do código-fonte ao executável
+
+Até aqui, o app sempre rodou com `python app.py`. Para entregar o programa a
+outra pessoa, o projeto usa **PyInstaller** e **Inno Setup**. O resultado é:
+
+```text
+dist/OCR-Capturas/OCR-Capturas.exe   programa + pasta _internal
+dist/instalador/...-instalador.exe   instalador do Windows
+```
+
+O PyInstaller cria uma pasta `_internal` com as bibliotecas, o interpretador
+Python e os dados. O `OCR-Capturas.exe` é o ponto de entrada; ele não precisa
+de Python instalado na máquina de destino.
+
+### 17.1 `sys.frozen` e `sys._MEIPASS`
+
+Dentro do executável, o Python define `sys.frozen = True` e aponta
+`sys._MEIPASS` para a pasta de recursos (`_internal` no modo `--onedir`). O
+código não pode assumir que `__file__` ou o diretório de trabalho apontam para
+o projeto:
+
+```python
+def esta_empacotado() -> bool:
+    return bool(getattr(sys, "frozen", False))
+
+
+def pasta_recursos() -> Path:
+    if esta_empacotado():
+        base = getattr(sys, "_MEIPASS", None)
+        if base is not None:
+            return Path(base)
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+```
+
+Essas funções ficam em `caminhos.py`. Os outros módulos pedem o caminho pronto
+em vez de repetir `sys._MEIPASS`.
+
+### 17.2 Tesseract embutido e `TESSDATA_PREFIX`
+
+O instalador não instala o Tesseract no sistema. O build copia
+`tesseract.exe`, as DLLs e os idiomas para `_internal/tesseract`. Na
+inicialização, `pasta_tesseract_embutido()` devolve esse caminho e configura:
+
+```python
+os.environ["TESSDATA_PREFIX"] = str(tessdata)
+```
+
+O `TESSDATA_PREFIX` deve apontar para a própria pasta `tessdata`. Se apontar
+para a pasta pai, o comando `tesseract --list-langs` mostra nomes como
+`tessdata/eng`, que não batem com o valor `eng` usado pelo `pytesseract`.
+
+O `MotorOcr` dá prioridade ao Tesseract embutido; se ele não existir (por
+exemplo, rodando pelo código-fonte), procura `CAMINHO_TESSERACT`, o `PATH` e a
+pasta padrão do Windows.
+
+### 17.3 Dados do usuário
+
+A pasta de instalação pode ser somente leitura. Por isso, no executável:
+
+- o histórico vai para `%APPDATA%\OCR Capturas\resultados_historico\`;
+- as preferências vão para `%APPDATA%\OCR Capturas\preferencias.json`;
+- o log vai para `%LOCALAPPDATA%\OCR Capturas\ocr.log`.
+
+No código-fonte, `pasta_resultados()` mantém a pasta relativa
+`resultados_historico/`, usada durante o desenvolvimento. Quem decide é
+`caminhos.py`, não cada módulo.
+
+### 17.4 `print` sem console
+
+O executável é gerado com `--windowed`: não há console e `sys.stdout` e
+`sys.stderr` chegam como `None`. O primeiro `print` derrubaria o app. Por isso
+`app.py` começa com:
+
+```python
+def _configurar_saida() -> None:
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    # abre o log e substitui os streams que estiverem None
+```
+
+Se o log não puder ser criado, a saída é descartada em `os.devnull`; o app
+continua funcionando. É por isso que o diagnóstico do aplicativo instalado
+aparece em `ocr.log`, e não em uma janela de terminal.
+
+### 17.5 `--painel` e instância única
+
+O executável não mostra janela ao iniciar, porque ele precisa ficar em segundo
+plano para ouvir os atalhos. O atalho do menu Iniciar passa `--painel`; o
+`app.py` coloca um pedido na fila do painel antes de chamar o `mainloop` do
+Tkinter.
+
+Como o app registra atalhos globais, duas cópias atrapalhariam uma à outra.
+`instancia.py` cria um mutex nomeado com `ctypes`:
+
+```python
+handle = kernel32.CreateMutexW(None, False, "OCR-Capturas-SingleInstance")
+```
+
+Se o mutex já existe, a segunda cópia mostra um aviso e encerra. O Inno Setup
+usa o mesmo nome em `AppMutex` para pedir que o app seja fechado antes de uma
+atualização.
+
+### 17.6 Como reproduzir o build
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\empacotamento\build.ps1
+```
+
+O script valida o Tesseract da máquina de build, copia os idiomas para
+`build/tesseract`, roda o PyInstaller, cria o ZIP portátil e chama o Inno
+Setup. A versão padrão é `1.0.0`; para outra, use `-Versao 1.0.1`.
+
+O arquivo `empacotamento/version_info.txt` é um template com
+`__VERSAO__` e `__VERSAO_TUPLA__`. O `build.ps1` substitui esses valores e
+gera `build/version_info.txt`, que o PyInstaller usa. O Inno Setup recebe a
+mesma versão por `/DMyAppVersion=...`, e o bloco `#ifndef MyAppVersion` em
+`instalador.iss` só usa o valor padrão quando o parâmetro não é passado.
+
+O guia completo, com os caminhos de saída e as opções, está no
+[`README.md`](README.md), seção **Gerando o executável e o instalador**.
+
+### 17.7 Release automático no GitHub
+
+O arquivo `.github/workflows/release.yml` é lido pelo GitHub Actions. O
+gatilho é:
+
+```yaml
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+```
+
+`workflow_dispatch` permite rodar manualmente pela aba **Actions**. O job usa
+`runs-on: windows-latest` e declara `permissions: contents: write` para poder
+criar a release com o token automático do GitHub.
+
+A versão vem de `github.run_number`, que o GitHub incrementa a cada execução:
+
+```powershell
+$versao = "$env:VERSAO_BASE.${{ github.run_number }}"
+```
+
+Com `VERSAO_BASE=1.0`, a execução 42 gera `1.0.42` e a tag `v1.0.42`. O
+workflow instala Tesseract e Inno Setup com Chocolatey, baixa os modelos
+`tessdata_best` dos idiomas de `IDIOMAS_TESSERACT`, roda o `build.ps1` e
+publica com a CLI `gh`:
+
+```powershell
+gh release create $tag @assets --target $env:GITHUB_SHA --generate-notes
+```
+
+Se a release já existe, `gh release upload --clobber` substitui os assets.
+Isso deixa a execução idempotente: reexecutar o workflow não cria outra
+release para a mesma tag.

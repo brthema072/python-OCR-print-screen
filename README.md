@@ -3,9 +3,10 @@
 Pressione **Print Screen** ou **Win + Shift + S** (ou **Ctrl + Win + S**) e o
 app reconhece o texto da imagem que estiver na área de transferência.
 
-O texto reconhecido é exibido no console e publicado conforme as opções do
-painel lateral: pode substituir a imagem no clipboard, ser salvo em `.txt` ou
-apenas aparecer no console.
+O texto reconhecido é exibido no terminal (no código-fonte) ou no arquivo de
+log (no aplicativo instalado) e publicado conforme as opções do painel
+lateral: pode substituir a imagem no clipboard, ser salvo em `.txt` ou apenas
+ser exibido no diagnóstico.
 
 **Alt + P** abre um painel lateral para ligar/desligar o OCR na hora. Com o
 OCR desligado, nenhum reconhecimento é executado e a captura continua sendo
@@ -13,13 +14,20 @@ apenas uma imagem na área de transferência, pronta para colar.
 
 ## Requisitos
 
-- Windows 10 ou 11
-- Python 3.10+ (testado com Python 3.13)
-- Tesseract-OCR instalado (motor principal)
-- Opcional: um idioma com OCR instalado no Windows (motor alternativo)
+### Para usar o instalador ou o pacote portátil
 
-A interface usa `tkinter`, que acompanha o Python oficial do Windows. Não há
-dependência nova.
+- Windows 10 ou 11, 64 bits.
+- Nenhuma instalação de Python ou Tesseract é necessária: o pacote inclui o
+  Tesseract e os idiomas `por+eng`.
+- Opcional: um idioma com OCR instalado no Windows (motor alternativo).
+
+### Para rodar a partir do código-fonte
+
+- Python 3.10+ (testado com Python 3.13).
+- Tesseract-OCR instalado (motor principal).
+- Opcional: um idioma com OCR instalado no Windows (motor alternativo).
+
+A interface usa `tkinter`, que acompanha o Python oficial do Windows.
 
 O app usa o **Tesseract** como motor principal. Se ele não devolver nenhum
 texto, o app tenta o **OCR nativo do Windows** (`Windows.Media.Ocr`) como
@@ -41,10 +49,11 @@ novo e selecione o português).
 > O pacote `pytesseract` é apenas a ponte em Python. Ele não inclui o
 > executável do Tesseract.
 
-O app procura o executável no `PATH` e em `C:\Program Files\Tesseract-OCR`;
-se estiver em outro lugar, ajuste `CAMINHO_TESSERACT` em
-`ocr_captura/configuracao.py`. Idiomas configurados que não estiverem
-instalados são ignorados com um aviso na inicialização.
+No modo instalado, o Tesseract portátil incluído tem prioridade. No
+código-fonte, o app procura o executável no `PATH` e em
+`C:\Program Files\Tesseract-OCR`; se estiver em outro lugar, ajuste
+`CAMINHO_TESSERACT` em `ocr_captura/configuracao.py`. Idiomas configurados que
+não estiverem instalados são ignorados com um aviso na inicialização.
 
 Para habilitar o fallback do Windows, instale o OCR do idioma:
 
@@ -57,6 +66,31 @@ perfil do usuário.
 
 ## Instalação
 
+### Usando o instalador
+
+Baixe o arquivo mais recente na página **Releases** do repositório e execute
+`OCR-Capturas-<versao>-instalador.exe`. A instalação é feita apenas para o
+usuário atual, não pede senha de administrador e não instala o Tesseract no
+sistema: ele vai junto com o aplicativo.
+
+O instalador cria um atalho no menu Iniciar. Esse atalho abre o painel de
+controle; o aplicativo continua rodando em segundo plano quando o painel é
+fechado. Também é possível marcar a criação de um atalho na área de trabalho e
+o início automático com o Windows.
+
+O instalador e o executável não têm assinatura digital. Se o Windows mostrar
+"O Windows protegeu o computador", clique em **Mais informações** e depois em
+**Executar assim mesmo**. Para distribuir sem esse aviso, é necessário assinar
+o executável com um certificado de code signing.
+
+### Usando o pacote portátil
+
+Baixe `OCR-Capturas-<versao>-portable.zip` na página **Releases**, extraia e
+execute `OCR-Capturas\OCR-Capturas.exe`. O pacote portátil não cria atalhos;
+use `Alt+P` para abrir o painel.
+
+### Rodando a partir do código-fonte
+
 ```powershell
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -68,6 +102,12 @@ pip install -r requirements.txt
 python app.py
 ```
 
+Para abrir o painel assim que o app iniciar:
+
+```powershell
+python app.py --painel
+```
+
 Atalhos:
 
 | Atalho | Comportamento |
@@ -77,13 +117,124 @@ Atalhos:
 | `Win + Shift + S` | Abre a ferramenta de recorte nativa. |
 | `Ctrl + Win + S` | Dispara o atalho nativo `Win + Shift + S` (esse atalho não é nativo do Windows). |
 
-Depois de selecionar a área e confirmar o recorte, aguarde a mensagem de OCR
-no console.
+Depois de selecionar a área e confirmar o recorte, aguarde a mensagem de OCR.
+No código-fonte ela aparece no terminal; no aplicativo instalado, o texto é
+copiado para o clipboard e/ou salvo, e o diagnóstico fica no arquivo de log.
 
-> O `app.py` precisa continuar rodando no terminal para os atalhos e o OCR
-> funcionarem. Se você fechar o terminal, o programa para. O `Win + Shift + S`
-> e o `Print Screen` continuam abrindo o recorte do Windows normalmente, mas
-> sem o OCR.
+> Rodando com `python app.py`, o terminal precisa continuar aberto para os
+> atalhos e o OCR funcionarem. Se você fechar o terminal, o programa para.
+> No aplicativo instalado não há terminal: ele fica em segundo plano e é
+> encerrado pelo botão **Encerrar aplicativo** do painel (`Alt+P`).
+
+## Gerando o executável e o instalador
+
+O build é feito com **PyInstaller** (executável em pasta, `--onedir`) e
+**Inno Setup** (instalador `.exe`). O Tesseract é copiado para dentro do
+pacote; quem instala não precisa ter Python nem Tesseract.
+
+Pré-requisitos de build:
+
+- Windows 10/11 de 64 bits.
+- Python 3.10+ com o ambiente virtual do projeto.
+- Tesseract instalado na máquina de build, com os idiomas `por`, `eng` e
+  `osd` (o script valida os arquivos antes de empacotar).
+- Inno Setup 6:
+
+  ```powershell
+  winget install --id JRSoftware.InnoSetup
+  ```
+
+- Dependências de build no ambiente virtual:
+
+  ```powershell
+  .\.venv\Scripts\Activate.ps1
+  pip install -r requirements-dev.txt
+  ```
+
+Para gerar tudo:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\empacotamento\build.ps1
+```
+
+O `-ExecutionPolicy Bypass` vale só para essa execução. Se a política de
+execução do seu Windows já permitir scripts locais,
+`.\empacotamento\build.ps1` também funciona.
+
+O script:
+
+1. valida o Tesseract e os idiomas configurados em `IDIOMAS_TESSERACT`;
+2. copia uma versão portátil do Tesseract para `build/tesseract`;
+3. executa o PyInstaller com `empacotamento/ocr_capturas.spec`;
+4. cria o ZIP portátil;
+5. compila o instalador com Inno Setup.
+
+Saídas em `dist/` (a versão padrão é `1.0.0`):
+
+```text
+dist\OCR-Capturas\OCR-Capturas.exe                  pasta portátil
+dist\OCR-Capturas-1.0.0-portable.zip                pacote portátil
+dist\instalador\OCR-Capturas-1.0.0-instalador.exe   instalador
+```
+
+Opções úteis:
+
+- `-SemInstalador`: gera só a pasta portátil e o ZIP, sem Inno Setup.
+- `-PularInstalacao`: não executa `pip install` antes do build.
+- `-Versao 1.0.1`: gera os arquivos com outra versão.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\empacotamento\build.ps1 -Versao 1.0.1
+```
+
+O instalador gerado é um `.exe` do Inno Setup, não um `.msi`. Para uma
+distribuição corporativa que exija MSI, seria necessário um projeto WiX ou
+uma ferramenta como o Advanced Installer; o fluxo atual prioriza o instalador
+`.exe`, que é mais simples para um utilitário de usuário.
+
+O ícone é gerado por `empacotamento/gerar_icone.py`. O arquivo
+`empacotamento/version_info.txt` é um template: o build preenche os
+placeholders em `build/version_info.txt`, e o Inno Setup recebe a mesma versão
+por `/DMyAppVersion`. Não é preciso editar a versão em vários arquivos.
+
+O Tesseract é distribuído sob a licença Apache 2.0. A licença é copiada para
+`_internal\tesseract\LICENSE` dentro do executável. O instalador e o
+executável não são assinados digitalmente; para evitar o aviso do SmartScreen,
+é preciso um certificado de code signing.
+
+## Releases automáticos no GitHub
+
+O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
+gera e publica uma release sempre que um commit chega à branch `main`. Ele
+também pode ser iniciado manualmente pela aba **Actions** do GitHub
+(**Build e release > Run workflow**, escolhendo a branch `main`).
+
+A versão automática é:
+
+```text
+1.0.<número da execução do workflow>
+```
+
+Por exemplo, a execução 42 publica a tag `v1.0.42`. O número sempre aumenta,
+então cada release tem uma versão própria. Para mudar a base `1.0`, edite
+`VERSAO_BASE` no início do workflow.
+
+Cada release recebe estes assets:
+
+```text
+OCR-Capturas-<versao>-instalador.exe
+OCR-Capturas-<versao>-portable.zip
+SHA256SUMS.txt
+```
+
+O workflow roda em `windows-latest`, instala Python, Tesseract e Inno Setup,
+baixa os modelos de idioma configurados em `IDIOMAS_TESSERACT` e executa
+`build.ps1 -Versao <versao>`. Ele precisa de permissão de escrita em
+**Contents**; o próprio workflow declara `contents: write` no token do GitHub
+Actions.
+
+Se a release daquela tag já existir, o workflow substitui os assets em vez de
+falhar. Isso permite reexecutar uma execução sem criar uma release duplicada.
 
 ## Painel lateral (Alt + P)
 
@@ -95,8 +246,8 @@ ou `Esc`. Ele tem três opções:
   outro programa.
 - **Copiar texto reconhecido**: ligado, o texto substitui a imagem no
   clipboard. Desligado, a imagem continua disponível.
-- **Salvar histórico em .txt**: grava o texto reconhecido na pasta
-  `resultados_historico/`.
+- **Salvar histórico em .txt**: grava o texto reconhecido na pasta de
+  resultados do usuário (veja **Onde ficam os dados** abaixo).
 
 As opções de resultado ficam desabilitadas quando o OCR está desligado. As
 alterações valem imediatamente e são salvas em:
@@ -110,7 +261,27 @@ O arquivo é criado na primeira alteração feita no painel. As constantes de
 tem prioridade. Para voltar aos padrões, feche o app e apague esse arquivo.
 
 O painel também tem o botão **Encerrar aplicativo**, que fecha o app de forma
-limpa (equivalente a `Ctrl+C` no terminal).
+limpa. No código-fonte ele equivale a `Ctrl+C` no terminal.
+
+## Onde ficam os dados
+
+No aplicativo instalado, os arquivos do usuário ficam fora da pasta de
+instalação:
+
+```text
+%APPDATA%\OCR Capturas\preferencias.json
+%APPDATA%\OCR Capturas\resultados_historico\
+%LOCALAPPDATA%\OCR Capturas\ocr.log
+```
+
+O log é usado principalmente porque o executável é uma aplicação de janela,
+sem console. Ele ajuda a diagnosticar se o Tesseract e o OCR do Windows foram
+carregados e mostra o texto reconhecido.
+
+No código-fonte, o histórico continua sendo gravado em
+`resultados_historico/`, relativo à pasta de onde você executa `python app.py`.
+As preferências continuam em `%APPDATA%\OCR Capturas\preferencias.json`.
+Desinstalar o aplicativo não apaga preferências nem resultados.
 
 ## Como o código está organizado
 
@@ -121,6 +292,7 @@ O `app.py` é apenas o ponto de entrada. A implementação fica no pacote
 app.py                          ponto de entrada; cria as peças e inicia o app
 ocr_captura/
     configuracao.py             valores padrão que você pode ajustar
+    caminhos.py                 recursos do executável e pastas do usuário
     preferencias.py             opções do painel, salvas em JSON
     painel.py                   painel lateral Tkinter (Alt+P)
     imagens.py                  conversão, ampliação e texto claro sobreposto
@@ -128,6 +300,10 @@ ocr_captura/
     ocr.py                      Tesseract (principal) e OCR do Windows (fallback)
     atalhos.py                  atalhos globais de teclado
     captura.py                  laço principal e estado da captura
+    instancia.py                evita duas cópias do app ao mesmo tempo
+empacotamento/                  PyInstaller, Inno Setup e script de build
+.github/workflows/release.yml   build e release automáticos no GitHub
+requirements-dev.txt            dependências para gerar o executável
 GUIA_PYTHON.md                  conceitos de Python usados no projeto
 ```
 
@@ -148,7 +324,7 @@ O fluxo de uma captura:
    fica com o resultado mais completo.
 8. Se o Tesseract não devolver texto, `MotorOcr` tenta o OCR do Windows.
 9. O texto é exibido e, conforme as preferências, copiado para o clipboard
-   e/ou salvo em `resultados_historico/`.
+   e/ou salvo na pasta de resultados.
 
 O painel roda na thread principal (é ela que executa o `mainloop` do Tkinter);
 o monitor de capturas roda em uma thread `daemon`. O callback do `Alt+P` só
@@ -164,15 +340,24 @@ No arquivo `ocr_captura/configuracao.py`:
   reconhecido substitui a imagem no clipboard. O painel lateral pode alterar
   em tempo de execução.
 - `SALVAR_RESULTADO`: valor padrão de "salvar histórico". Se `True`, grava o
-  texto reconhecido em um `.txt`. O painel lateral pode alterar em tempo de
-  execução.
+  texto reconhecido em um `.txt` na pasta de resultados. O painel lateral pode
+  alterar em tempo de execução.
 - `ESPERA_CAPTURA_SEGUNDOS`: tempo máximo, em segundos, para concluir o recorte.
 - `IDIOMAS_OCR`: ordem de preferência dos idiomas de OCR do Windows.
 - `USAR_TESSERACT`: se `True` (padrão), usa o Tesseract como motor principal;
   se `False`, usa apenas o OCR do Windows.
-- `IDIOMAS_TESSERACT`: idiomas usados pelo Tesseract (ex.: `"por+eng"`).
+- `IDIOMAS_TESSERACT`: idiomas usados pelo Tesseract (ex.: `"por+eng"`). No
+  código-fonte, eles precisam estar instalados; no build, são copiados para o
+  pacote. Para usar outros idiomas no aplicativo instalado, edite esta opção,
+  instale os idiomas na máquina de build e gere o executável novamente.
 - `CAMINHO_TESSERACT`: caminho do `tesseract.exe`; vazio faz o app procurar
-  no `PATH` e na pasta padrão.
+  no `PATH` e na pasta padrão. No executável, o Tesseract embutido tem
+  prioridade.
+- `PASTA_RESULTADOS`: nome da pasta de resultados. No código-fonte ela é
+  relativa à pasta de onde você executa `python app.py`; no executável fica
+  em `%APPDATA%\OCR Capturas\resultados_historico`.
+- `PASTA_PREFERENCIAS`, `ARQUIVO_PREFERENCIAS`: pasta e nome do JSON de
+  preferências, dentro de `%APPDATA%`.
 - `TEXTO_CLARO_SATURACAO_MAXIMA`, `TEXTO_CLARO_BRILHO_MINIMO`: controlam a
   máscara de texto claro/neutro sobreposto à imagem.
 - `TEXTO_CLARO_COBERTURA_MINIMA`, `TEXTO_CLARO_COBERTURA_MAXIMA`: faixa de
@@ -186,7 +371,8 @@ No arquivo `ocr_captura/configuracao.py`:
 As opções alteradas no painel são gravadas em
 `%APPDATA%\OCR Capturas\preferencias.json` e têm prioridade sobre as
 constantes acima. Para voltar aos padrões, apague esse arquivo com o app
-fechado.
+fechado. No aplicativo instalado, não é possível editar
+`configuracao.py`; as opções ajustáveis continuam disponíveis no painel.
 
 ## Entendendo o código
 
@@ -205,22 +391,43 @@ Se você programa em outra linguagem e está aprendendo Python, comece pelo
 
 ## Problemas comuns
 
-- **Os atalhos não funcionam**: execute o terminal como administrador,
-  principalmente se o app em foco também estiver elevado. Alguns jogos que usam
-  entrada direta (raw input) podem não ser capturados.
+- **Instalei, mas não vejo janela**: o app roda em segundo plano. Clique no
+  atalho **OCR de Capturas** do menu Iniciar, que abre o painel, ou pressione
+  `Alt+P`. O diagnóstico fica em
+  `%LOCALAPPDATA%\OCR Capturas\ocr.log`.
+- **O Windows bloqueou o instalador**: ele não tem assinatura digital. Clique
+  em **Mais informações** e depois em **Executar assim mesmo**. Para eliminar
+  o aviso, assine o executável e o instalador com um certificado de code
+  signing.
+- **Onde estão os resultados e o log**: no aplicativo instalado, o histórico
+  fica em `%APPDATA%\OCR Capturas\resultados_historico\` e o log em
+  `%LOCALAPPDATA%\OCR Capturas\ocr.log`. Veja **Onde ficam os dados**.
+- **Abri o app duas vezes**: a segunda cópia mostra um aviso e encerra. Use
+  `Alt+P` para abrir o painel da cópia que já está rodando.
+- **Como desinstalar**: use **Configurações > Aplicativos > Aplicativos
+  instalados > OCR de Capturas > Desinstalar**, ou o atalho de desinstalação
+  do menu Iniciar. Preferências e resultados não são apagados.
+- **Os atalhos não funcionam**: no código-fonte, execute o terminal como
+  administrador, principalmente se o app em foco também estiver elevado. No
+  aplicativo instalado, execute o atalho como administrador se precisar capturar
+  janelas elevadas. Alguns jogos que usam entrada direta (raw input) podem não
+  ser capturados.
 - **Alt + P não abre o painel**: verifique se outro programa usa o mesmo
   atalho global. Alguns aplicativos elevados também podem impedir o hook de
-  teclado de receber a combinação; nesse caso, execute o terminal como
-  administrador.
+  teclado de receber a combinação; nesse caso, execute o app como administrador.
 - **Print Screen não copia nada**: no Windows 11, por padrão, ele abre a
   ferramenta de recorte. Se a opção estiver desativada, verifique se o Windows
   está configurado para copiar a tela para a área de transferência.
-- **Nenhum texto é reconhecido**: veja a mensagem de inicialização para saber
-  qual motor foi carregado. Confirme os idiomas do Tesseract com
+- **Nenhum texto é reconhecido**: veja a mensagem de inicialização (no
+  terminal ou em `%LOCALAPPDATA%\OCR Capturas\ocr.log`) para saber qual motor
+  foi carregado. Confirme os idiomas do Tesseract com
   `tesseract --list-langs` e, se o fallback do Windows for usado, se o OCR do
   idioma está instalado.
 - **O Tesseract não é usado**: a mensagem de inicialização avisa quando o
-  `pytesseract` ou o executável do Tesseract não foram encontrados. Rode
+  `pytesseract` ou o executável do Tesseract não foram encontrados. No
+  aplicativo instalado, o Tesseract vai em
+  `_internal\tesseract\tesseract.exe`; se ele estiver ausente, reinstale o
+  aplicativo. No código-fonte, rode
   `& "C:\Program Files\Tesseract-OCR\tesseract.exe" --list-langs` (ou
   `tesseract --list-langs`, se ele estiver no `PATH`) para ver os idiomas
   instalados e confirme se eles batem com `IDIOMAS_TESSERACT`. Se o

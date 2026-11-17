@@ -6,16 +6,15 @@ gravada em um arquivo JSON no perfil do usuário.
 """
 
 import json
-import os
 import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from .caminhos import pasta_dados_usuario
 from .configuracao import (
     ARQUIVO_PREFERENCIAS,
     COPIAR_RESULTADO,
     OCR_ATIVO,
-    PASTA_PREFERENCIAS,
     SALVAR_RESULTADO,
 )
 
@@ -36,12 +35,7 @@ class Preferencias:
 
 def _caminho_padrao() -> Path:
     """Devolve o caminho do arquivo de preferências no perfil do usuário."""
-    base = os.environ.get("APPDATA")
-    if base:
-        return Path(base) / PASTA_PREFERENCIAS / ARQUIVO_PREFERENCIAS
-
-    # Fallback para ambientes sem APPDATA (por exemplo, um terminal mínimo).
-    return Path.home() / ".ocr_capturas" / ARQUIVO_PREFERENCIAS
+    return pasta_dados_usuario() / ARQUIVO_PREFERENCIAS
 
 
 class GerenciadorPreferencias:

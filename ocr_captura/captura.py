@@ -5,16 +5,15 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 
 from PIL import Image
 
 from .area_transferencia import AreaTransferencia
 from .atalhos import Atalhos
+from .caminhos import pasta_resultados
 from .configuracao import (
     ESPERA_CAPTURA_SEGUNDOS,
     INTERVALO_VERIFICACAO_SEGUNDOS,
-    PASTA_RESULTADOS,
 )
 from .ocr import MotorOcr
 from .preferencias import GerenciadorPreferencias
@@ -166,9 +165,9 @@ class MonitorCapturas:
             )
 
     def _salvar_resultado(self, texto: str) -> None:
-        """Salva o texto reconhecido em um arquivo .txt na pasta configurada"""
+        """Salva o texto reconhecido em um arquivo .txt na pasta configurada."""
         try:
-            pasta = Path(PASTA_RESULTADOS)
+            pasta = pasta_resultados()
 
             if not pasta.exists():
                 pasta.mkdir(parents=True, exist_ok=True)

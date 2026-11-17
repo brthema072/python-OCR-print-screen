@@ -509,7 +509,7 @@ class PainelLateral:
         self._interruptor_salvar = self._criar_linha_opcao(
             cartao,
             "Salvar histórico em .txt",
-            "Grava o texto na pasta resultados_historico/.",
+            "Grava o texto na pasta de resultados do usuário.",
             self._preferencias.atuais().salvar_resultado,
             self._ao_alternar_salvar,
         )
@@ -688,7 +688,7 @@ class PainelLateral:
             if preferencias.copiar_texto and preferencias.salvar_resultado:
                 descricao = (
                     "O texto substitui a imagem e também é salvo na pasta "
-                    "resultados_historico/."
+                    "de resultados."
                 )
             elif preferencias.copiar_texto:
                 descricao = (
@@ -697,12 +697,12 @@ class PainelLateral:
                 )
             elif preferencias.salvar_resultado:
                 descricao = (
-                    "O texto é salvo em resultados_historico/; a imagem "
+                    "O texto é salvo na pasta de resultados; a imagem "
                     "continua disponível na área de transferência."
                 )
             else:
                 descricao = (
-                    "O texto aparece apenas no console; a imagem continua "
+                    "O texto não é copiado nem salvo; a imagem continua "
                     "disponível na área de transferência."
                 )
 

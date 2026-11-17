@@ -1,0 +1,6 @@
+# Dependências para gerar o executável e o instalador.
+# As dependências de execução continuam em requirements.txt.
+-r requirements.txt
+
+# PyInstaller 6.11+ é a primeira versão com suporte estável ao Python 3.13.
+pyinstaller>=6.11

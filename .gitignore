@@ -9,3 +9,8 @@ venv/
 
 # Saída do projeto
 resultados_historico/
+
+# Empacotamento
+build/
+dist/
+empacotamento/vendor/

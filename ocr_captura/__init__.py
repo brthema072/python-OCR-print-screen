@@ -4,11 +4,13 @@ O ponto de entrada continua sendo o `app.py`, na raiz do projeto. Este pacote
 guarda as partes internas, separadas por responsabilidade:
 
 - configuracao.py: valores que você pode ajustar;
+- caminhos.py: recursos do executável e pastas de dados do usuário;
 - imagens.py: conversão, ampliação e extração de texto claro sobreposto;
 - area_transferencia.py: leitura/escrita da área de transferência;
 - ocr.py: Tesseract (principal) e OCR nativo do Windows (alternativa);
 - atalhos.py: atalhos globais de teclado;
 - preferencias.py: opções alteráveis no painel, salvas em JSON;
 - painel.py: painel lateral (Alt+P) que edita as preferências;
-- captura.py: laço principal que liga todas as peças.
+- captura.py: laço principal que liga todas as peças;
+- instancia.py: impede duas cópias do app ao mesmo tempo.
 """

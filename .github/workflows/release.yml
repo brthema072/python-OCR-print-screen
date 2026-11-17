@@ -1,0 +1,179 @@
+name: Build e release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # A versão automática é 1.0.<número da execução>, por exemplo 1.0.42.
+  VERSAO_BASE: "1.0"
+
+jobs:
+  build-release:
+    name: Build e publicação
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Validar sintaxe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m compileall -q app.py ocr_captura
+          if ($LASTEXITCODE -ne 0) {
+            throw "A validacao de sintaxe falhou."
+          }
+
+      - name: Instalar Tesseract
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install tesseract --no-progress -y
+          if ($LASTEXITCODE -notin @(0, 3010, 1641)) {
+            throw "Chocolatey falhou ao instalar o Tesseract."
+          }
+
+          $candidatos = @(
+            (Join-Path $env:ProgramFiles "Tesseract-OCR"),
+            (Join-Path ${env:ProgramFiles(x86)} "Tesseract-OCR")
+          )
+          $tesseractDir = $candidatos |
+            Where-Object { Test-Path (Join-Path $_ "tesseract.exe") } |
+            Select-Object -First 1
+          if (-not $tesseractDir) {
+            throw "Tesseract não encontrado depois do choco install."
+          }
+
+          $tessdata = Join-Path $tesseractDir "tessdata"
+          New-Item -ItemType Directory -Force -Path $tessdata | Out-Null
+
+          $idiomas = (& python -c "from ocr_captura.configuracao import IDIOMAS_TESSERACT; print(IDIOMAS_TESSERACT)").Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($idiomas)) {
+            throw "Não foi possível ler IDIOMAS_TESSERACT."
+          }
+          $tags = @(
+            $idiomas -split "\+" |
+              ForEach-Object { $_.Trim() } |
+              Where-Object { $_ } |
+              Select-Object -Unique
+          )
+          $tags += "osd"
+          $tags = @($tags | Select-Object -Unique)
+
+          # Os modelos "best" são maiores, mas dão melhor resultado no OCR.
+          $ProgressPreference = "SilentlyContinue"
+          foreach ($idioma in $tags) {
+            $destino = Join-Path $tessdata "$idioma.traineddata"
+            $url = "https://github.com/tesseract-ocr/tessdata_best/raw/main/$idioma.traineddata"
+            if (Test-Path $destino) {
+              Remove-Item $destino -Force
+            }
+            Write-Host "Baixando $idioma..."
+            Invoke-WebRequest -Uri $url -OutFile $destino
+          }
+
+          & (Join-Path $tesseractDir "tesseract.exe") --list-langs
+          if ($LASTEXITCODE -ne 0) {
+            throw "O Tesseract não executou depois da instalação."
+          }
+
+      - name: Instalar Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -notin @(0, 3010, 1641)) {
+            throw "Chocolatey falhou ao instalar o Inno Setup."
+          }
+
+      - name: Calcular versão
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $versao = "$env:VERSAO_BASE.${{ github.run_number }}"
+          "VERSAO=$versao" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "TAG=v$versao" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Versão do release: $versao"
+
+      - name: Gerar executável e instalador
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & .\empacotamento\build.ps1 -Versao $env:VERSAO
+          if ($LASTEXITCODE -ne 0) {
+            throw "O build falhou."
+          }
+
+      - name: Gerar checksums
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $arquivos = @(
+            "dist\instalador\OCR-Capturas-$env:VERSAO-instalador.exe",
+            "dist\OCR-Capturas-$env:VERSAO-portable.zip"
+          )
+          foreach ($arquivo in $arquivos) {
+            if (-not (Test-Path $arquivo)) {
+              throw "Artefato não encontrado: $arquivo"
+            }
+          }
+
+          $linhas = foreach ($arquivo in $arquivos) {
+            $hash = (Get-FileHash $arquivo -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path $arquivo -Leaf)"
+          }
+          $linhas | Set-Content -Path "dist\SHA256SUMS.txt" -Encoding ascii
+          Get-Content "dist\SHA256SUMS.txt"
+
+      - name: Publicar no GitHub Releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tag = $env:TAG
+          $assets = @(
+            "dist\instalador\OCR-Capturas-$env:VERSAO-instalador.exe",
+            "dist\OCR-Capturas-$env:VERSAO-portable.zip",
+            "dist\SHA256SUMS.txt"
+          )
+
+          $ErrorActionPreference = "Continue"
+          gh release view $tag --json tagName *> $null
+          $releaseExiste = $LASTEXITCODE -eq 0
+          $ErrorActionPreference = "Stop"
+
+          if ($releaseExiste) {
+            Write-Host "Release $tag já existe; atualizando os assets."
+            gh release upload $tag @assets --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Falha ao atualizar os assets do release."
+            }
+          } else {
+            gh release create $tag @assets `
+              --target $env:GITHUB_SHA `
+              --title "OCR de Capturas $tag" `
+              --generate-notes
+            if ($LASTEXITCODE -ne 0) {
+              throw "Falha ao criar o release."
+            }
+          }

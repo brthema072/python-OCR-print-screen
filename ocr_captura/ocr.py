@@ -23,6 +23,7 @@ from winrt.windows.graphics.imaging import BitmapDecoder
 from winrt.windows.media.ocr import OcrEngine
 from winrt.windows.storage.streams import DataWriter, InMemoryRandomAccessStream
 
+from .caminhos import pasta_tesseract_embutido
 from .configuracao import (
     CAMINHO_TESSERACT,
     IDIOMAS_OCR,
@@ -38,6 +39,12 @@ class OcrIndisponivelError(RuntimeError):
 
 def _localizar_tesseract() -> str | None:
     """Devolve o caminho do executável do Tesseract, se ele existir."""
+    # O executável empacotado inclui uma cópia portátil do Tesseract. Ela tem
+    # prioridade para que a instalação não dependa do Tesseract do sistema.
+    embutido = pasta_tesseract_embutido()
+    if embutido is not None:
+        return str(embutido)
+
     if CAMINHO_TESSERACT:
         return CAMINHO_TESSERACT
 

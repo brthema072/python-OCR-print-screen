@@ -1,0 +1,56 @@
+OCR de Capturas
+================
+
+Este aplicativo reconhece o texto de capturas de tela no Windows. Ele já
+inclui o Tesseract e não precisa de Python nem de uma instalação separada do
+Tesseract.
+
+Como usar
+---------
+
+1. O atalho "OCR de Capturas" do menu Iniciar abre o painel de controle.
+   Se o painel estiver fechado, pressione Alt+P para abrir.
+2. Pressione Print Screen ou Win+Shift+S e selecione a área da tela.
+3. O texto reconhecido substitui a imagem na área de transferência e/ou é
+   salvo, conforme as opções do painel.
+4. Para encerrar o aplicativo, abra o painel com Alt+P e clique em
+   "Encerrar aplicativo".
+
+Atalhos:
+
+  Alt+P          abre ou fecha o painel
+  Print Screen   captura conforme a configuração do Windows
+  Win+Shift+S    abre a ferramenta de recorte do Windows
+  Ctrl+Win+S     abre a ferramenta de recorte pelo aplicativo
+
+O aplicativo continua rodando em segundo plano depois que o painel é fechado.
+O atalho do menu Iniciar abre o painel com a opção --painel; o início
+automático com o Windows usa o modo silencioso.
+
+Onde ficam os arquivos
+----------------------
+
+Preferências:
+  %APPDATA%\OCR Capturas\preferencias.json
+
+Histórico de texto:
+  %APPDATA%\OCR Capturas\resultados_historico
+
+Log de diagnóstico:
+  %LOCALAPPDATA%\OCR Capturas\ocr.log
+
+Para abrir essas pastas, cole o caminho na barra de endereço do Explorer.
+O histórico e as preferências não são apagados ao desinstalar o aplicativo.
+
+Observações
+-----------
+
+- O instalador instala apenas para o usuário atual e não pede senha de
+  administrador.
+- Se os atalhos não funcionarem quando uma janela elevada estiver em foco,
+  execute o aplicativo como administrador.
+- O instalador e o executável não têm assinatura digital. Se o Windows mostrar
+  "O Windows protegeu o computador", clique em "Mais informações" e depois em
+  "Executar assim mesmo".
+- O Tesseract é distribuído sob a licença Apache 2.0. A licença está em
+  _internal\tesseract\LICENSE.
